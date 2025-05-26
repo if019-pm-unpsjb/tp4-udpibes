@@ -16,6 +16,12 @@ struct mensaje_tftp
     char descripcion[500];
 };
 
+const int RRQ = 01;
+const int WRQ = 02;
+const int DATA = 03;
+const int ACK = 04;
+const int ERROR = 05;
+
 bool existeArchivo(struct mensaje_tftp mensaje)
 {
     return access(mensaje.descripcion, F_OK) == 0;
@@ -83,6 +89,99 @@ bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_
         bloque_num++;
 
     } while (bytes_leidos == 512);
+
+    fclose(archivo);
+    return true;
+}
+
+bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_in direccion_cliente)
+{
+    FILE *archivo = fopen(mensaje.descripcion, "w");
+    printf("Descripcion del mensaje %s\n", mensaje.descripcion);
+    if (archivo == NULL)
+    {
+        perror("Error al abrir el archivo");
+        return false;
+    }
+
+    struct
+    {
+        uint16_t opcode;
+        uint16_t bloque;
+        char datos[512];
+    } paquete;
+
+    struct
+    {
+        uint16_t opcode;
+        uint16_t bloque;
+    } ack;
+
+    socklen_t tam = sizeof(direccion_cliente);
+    uint16_t bloque_esperado = 1;
+
+    while (true)
+    {
+        ssize_t bytes_recibidos = recvfrom(socket_udp, &paquete, sizeof(paquete), 0,
+                                           (struct sockaddr *)&direccion_cliente, &tam);
+
+        if (bytes_recibidos < 4)
+        {
+            // Paquete demasiado pequeño para ser válido
+            fprintf(stderr, "Paquete recibido demasiado pequeño\n");
+            fclose(archivo);
+            return false;
+        }
+
+        uint16_t opcode = ntohs(paquete.opcode);
+        uint16_t bloque = ntohs(paquete.bloque);
+
+        if (opcode != DATA)
+        {
+            fprintf(stderr, "Paquete recibido con opcode inesperado: %d\n", opcode);
+            fclose(archivo);
+            return false;
+        }
+
+        if (bloque != bloque_esperado)
+        {
+            fprintf(stderr, "Bloque recibido fuera de orden: esperado %d, recibido %d\n", bloque_esperado, bloque);
+            // Aquí podrías ignorar o enviar ACK del último bloque correcto recibido
+            fclose(archivo);
+            return false;
+        }
+
+        // La cantidad de datos es bytes_recibidos - 4 bytes (2 para opcode y 2 para bloque)
+        size_t datos_len = bytes_recibidos - 4;
+
+        // Escribir datos en el archivo
+        size_t escritos = fwrite(paquete.datos, 1, datos_len, archivo);
+        if (escritos != datos_len)
+        {
+            perror("Error al escribir en el archivo");
+            fclose(archivo);
+            return false;
+        }
+
+        // Enviar ACK
+        ack.opcode = htons(ACK);
+        ack.bloque = htons(bloque);
+
+        if (sendto(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&direccion_cliente, tam) < 0)
+        {
+            perror("Error al enviar ACK");
+            fclose(archivo);
+            return false;
+        }
+
+        if (datos_len < 512)
+        {
+            // Último paquete recibido, termina recepción
+            break;
+        }
+
+        bloque_esperado++;
+    }
 
     fclose(archivo);
     return true;
@@ -163,6 +262,18 @@ int main(int argc, char *argv[])
             if (bytes_recibidos < 512)
             {
                 salir = true;
+            }
+            if (existeArchivo(mensaje))
+            {
+                printf("Error, el archivo '%s' ya existe.\n", mensaje.descripcion);
+                salir = true;
+                break;
+            }
+            else
+            {
+                printf("El archivo '%s' no existe. Se crea y se escribe\n", mensaje.descripcion);
+                strcpy(mensaje.descripcion, "Solicitud para escribir un archivo");
+                recibirArchivo(mensaje, socket_udp, direccion_cliente);
             }
 
             break;
