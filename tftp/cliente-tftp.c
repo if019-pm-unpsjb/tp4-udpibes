@@ -1,195 +1,144 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
+#include <string.h>
+#include <stdint.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <ctype.h>
 
-#define MAX_DESC 500
 #define MAX_DATA 512
+#define RRQ 1
+#define DATA 3
+#define ACK 4
 
-struct mensaje_tftp
+//Imprime los paquetes en un formato lindo
+void imprimir_paquete(uint16_t bloque, const char *datos, size_t len)
 {
-    uint16_t opcode;
-    char descripcion[500];
-};
+    printf("--- Paquete bloque #%d, bytes: %zu ---\n", bloque, len);
 
-const int RRQ = 01;
-const int WRQ = 02;
-const int DATA = 03;
-const int ACK = 04;
-const int ERROR = 05;
+    printf("Data: ");
+    for (size_t i = 0; i < len; i++)
+    {
+        if (isprint((unsigned char)datos[i]))
+        {
+            putchar(datos[i]);
+        }
+    }
+    printf("\n\n");
+}
 
 int main(int argc, char *argv[])
 {
 
-    int socket_udp;
+    // Argumentos
+    char *ip = argv[1];
+    int puerto = atoi(argv[2]);
+    char *archivo = argv[3];
 
-    socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
-
-    if (argc < 4)
+    // Crear socket UDP
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0)
     {
-        fprintf(stderr, "Uso: %s <IP> <Puerto> <RRQ|WRQ> <Archivo>", argv[0]);
+        perror("Error al crear socket");
         exit(EXIT_FAILURE);
     }
-
-    char *dir = argv[1];
-    char *port = argv[2];
-    char *comando = argv[3];
-    char *archivo_nombre = argc >= 5 ? argv[4] : "";
 
     struct sockaddr_in servidor;
+    socklen_t servidor_len = sizeof(servidor);
     memset(&servidor, 0, sizeof(servidor));
     servidor.sin_family = AF_INET;
-    servidor.sin_port = htons(atoi(port));
-    servidor.sin_addr.s_addr = inet_addr(dir);
+    servidor.sin_port = htons(puerto);
+    inet_pton(AF_INET, ip, &servidor.sin_addr);
 
-    // Crear el mensaje inicial (RRQ o WRQ)
-    struct mensaje_tftp mensaje;
-    memset(&mensaje, 0, sizeof(mensaje));
+    char modo[] = "octet"; //Modo (netascii, octet o mail)
+    size_t archivo_len = strlen(archivo);
+    size_t modo_len = strlen(modo);
 
-    if (strcmp(comando, "RRQ") == 0)
-        mensaje.opcode = RRQ;
-    else if (strcmp(comando, "WRQ") == 0)
-        mensaje.opcode = WRQ;
-    else
+    // 2 bytes para opcode + nombre + 1 byte nulo + modo + 1 byte nulo
+    size_t solicitud_len = 2 + archivo_len + 1 + modo_len + 1;
+    char buffer[516]; // tamaño máximo posible
+
+    // Escribir opcode de 2 bytes
+    buffer[0] = 0;
+    buffer[1] = RRQ;
+
+    // Escribir filename
+    memcpy(&buffer[2], archivo, archivo_len);
+    buffer[2 + archivo_len] = '\0';
+
+    // Escribir modo
+    memcpy(&buffer[3 + archivo_len], modo, modo_len);
+    buffer[3 + archivo_len + modo_len] = '\0';
+
+    // Enviar RRQ
+    if (sendto(sock, buffer, solicitud_len, 0,
+               (struct sockaddr *)&servidor, servidor_len) < 0)
     {
-        fprintf(stderr, "Comando no reconocido: %s", comando);
-        close(socket_udp);
+        perror("Error al enviar RRQ");
+        close(sock);
         exit(EXIT_FAILURE);
     }
 
-    strncpy(mensaje.descripcion, archivo_nombre, MAX_DESC - 1);
-
-    socklen_t servidor_len = sizeof(servidor);
-    ssize_t bytes_enviados = sendto(socket_udp, &mensaje, sizeof(mensaje), 0, (struct sockaddr *)&servidor, servidor_len);
-    if (bytes_enviados < 0)
+    struct
     {
-        perror("Error al enviar mensaje");
-        close(socket_udp);
-        exit(EXIT_FAILURE);
-    }
+        uint16_t opcode;
+        uint16_t bloque;
+        char datos[MAX_DATA];
+    } paquete;
 
-    printf("Solicitud enviada: opcode = %d, archivo = %s", mensaje.opcode, mensaje.descripcion);
+    struct
+    {
+        uint16_t opcode;
+        uint16_t bloque;
+    } ack;
 
-    if (mensaje.opcode == RRQ) {
-        FILE *archivo = fopen(archivo_nombre, "wb");
-        if (!archivo)
+    // Esperar respuesta del servidor
+    while (1)
+    {
+        ssize_t bytes_recibidos = recvfrom(sock, &paquete, sizeof(paquete), 0,
+                                           (struct sockaddr *)&servidor, &servidor_len);
+        if (bytes_recibidos < 0)
         {
-            perror("No se pudo abrir archivo para escritura");
-            close(socket_udp);
+            perror("Error al recibir DATA");
+            close(sock);
             exit(EXIT_FAILURE);
         }
 
-        struct
+        uint16_t opcode = ntohs(paquete.opcode);
+        uint16_t bloque = ntohs(paquete.bloque);
+        size_t datos_len = bytes_recibidos - 4; // Le resta el encabezado
+
+        if (opcode != DATA)
         {
-            uint16_t opcode;
-            uint16_t bloque;
-            char data[MAX_DATA];
-        } data_pkt;
-
-        while (1)
-        {
-            ssize_t recvd = recvfrom(socket_udp, &data_pkt, sizeof(data_pkt), 0, (struct sockaddr *)&servidor, &servidor_len);
-            if (recvd < 0)
-            {
-                perror("Error al recibir DATA");
-                fclose(archivo);
-                close(socket_udp);
-                exit(EXIT_FAILURE);
-            }
-
-            if (ntohs(data_pkt.opcode) == ERROR)
-            {
-                fprintf(stderr, "Servidor devolvia ERROR");
-                fclose(archivo);
-                close(socket_udp);
-                exit(EXIT_FAILURE);
-            }
-
-            size_t data_size = recvd - 4; // 4 bytes de cabecera (opcode + bloque)
-            fwrite(data_pkt.data, 1, data_size, archivo);
-
-            // Enviar ACK
-            struct
-            {
-                uint16_t opcode;
-                uint16_t bloque;
-            } ack;
-            ack.opcode = ACK;
-            ack.bloque = data_pkt.bloque;
-            sendto(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&servidor, servidor_len);
-
-            if (data_size < MAX_DATA)
-            {
-                printf("Archivo recibido completo.\n");
-            }
+            fprintf(stderr, "Error: se esperaba DATA, pero se recibió opcode %d\n", opcode);
+            break;
         }
 
-        fclose(archivo);
+        // Imprimir contenido recibido
+        imprimir_paquete(bloque, paquete.datos, datos_len);
 
-    } else if (mensaje.opcode == WRQ) {
-        FILE *archivo = fopen(archivo_nombre, "rb");
-        if (!archivo)
+        // Enviar ACK
+        ack.opcode = htons(ACK);
+        ack.bloque = htons(bloque);
+        printf("Enviando ACK:\n");
+        printf("  Opcode: %d\n", ntohs(ack.opcode));
+        printf("  Bloque: %d\n\n", ntohs(ack.bloque));
+
+        if (sendto(sock, &ack, sizeof(ack), 0,
+                   (struct sockaddr *)&servidor, servidor_len) < 0)
         {
-            perror("No se pudo abrir archivo para lectura");
-            close(socket_udp);
-            exit(EXIT_FAILURE);
+            perror("Error al enviar ACK");
+            break;
         }
 
-        struct
+        // Último paquete
+        if (datos_len < MAX_DATA)
         {
-            uint16_t opcode;
-            uint16_t bloque;
-            char data[MAX_DATA];
-        } data_pkt;
-
-        uint16_t bloque = 1;
-        while (1)
-        {
-            size_t leidos = fread(data_pkt.data, 1, MAX_DATA, archivo);
-            data_pkt.opcode = ACK;
-            data_pkt.bloque = htons(bloque);
-
-            sendto(socket_udp, &data_pkt, leidos + 4, 0, (struct sockaddr *)&servidor, servidor_len);
-
-            // Esperar ACK
-            struct
-            {
-                uint16_t opcode;
-                uint16_t bloque;
-            } ack;
-            ssize_t recvd = recvfrom(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&servidor, &servidor_len);
-            if (recvd < 0 || ntohs(ack.opcode) == ERROR)
-            {
-                fprintf(stderr, "Error al recibir ACK");
-                fclose(archivo);
-                close(socket_udp);
-                exit(EXIT_FAILURE);
-            }
-
-            if (leidos < MAX_DATA)
-            {
-                // Enviar bloque final vacÃ­o si el archivo termina justo en mÃºltiplo de 512
-                if (leidos == MAX_DATA)
-                {
-                    bloque++;
-                    data_pkt.opcode = htons(DATA);
-                    data_pkt.bloque = htons(bloque);
-                    sendto(socket_udp, &data_pkt, 4, 0, (struct sockaddr *)&servidor, servidor_len);
-                    recvfrom(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&servidor, &servidor_len);
-                }
-                printf("Archivo enviado completo.\n");
-                break;
-            }
-
-            bloque++;
+            break;
         }
-
-        fclose(archivo);
     }
 
-    close(socket_udp);
+    printf("\nTransferencia finalizada.\n");
+    close(sock);
     return 0;
 }

@@ -212,7 +212,6 @@ int main(int argc, char *argv[])
     bind(socket_udp, (struct sockaddr *)&cliente, sizeof(cliente));
 
     struct mensaje_tftp mensaje;
-    mensaje.opcode = ntohs(mensaje.opcode);
 
     struct sockaddr_in direccion_cliente;
     socklen_t tam_direccion = sizeof(direccion_cliente);
@@ -224,6 +223,7 @@ int main(int argc, char *argv[])
         ssize_t bytes_recibidos = recvfrom(socket_udp, &mensaje, sizeof(mensaje), 0,
                                            (struct sockaddr *)&direccion_cliente, &tam_direccion);
         printf("Mensaje recibido: %zd bytes\n", bytes_recibidos);
+        mensaje.opcode = ntohs(mensaje.opcode);
 
         /*   struct mensaje_tftp ack;
           ack.opcode = 4; // ACK por defecto
@@ -238,21 +238,31 @@ int main(int argc, char *argv[])
 
         switch (mensaje.opcode)
         {
-        case 1:
-            printf("Mensaje de tipo RRQ\n");
-            if (existeArchivo(mensaje))
-            {
-                printf("El archivo '%s' existe\n", mensaje.descripcion);
-            }
-            else
-            {
-                printf("El archivo '%s' no existe\n", mensaje.descripcion);
-                salir = true;
-                break;
-            }
-            strcpy(mensaje.descripcion, "Solicitud para leer un archivo");
-            enviarArchivo(mensaje, socket_udp, direccion_cliente);
-            break;
+case 1:
+    printf("Mensaje de tipo RRQ\n");
+    if (existeArchivo(mensaje))
+    {
+        printf("El archivo '%s' existe\n", mensaje.descripcion);
+
+        // Guardar nombre original antes de reemplazarlo
+        char nombre_archivo[500];
+        strcpy(nombre_archivo, mensaje.descripcion);
+
+        // Opcional: agregar descripción informativa si querés
+        strcpy(mensaje.descripcion, "Solicitud para leer un archivo");
+
+        // Volver a poner el nombre correcto para enviarArchivo
+        strcpy(mensaje.descripcion, nombre_archivo);
+
+        enviarArchivo(mensaje, socket_udp, direccion_cliente);
+    }
+    else
+    {
+        printf("El archivo '%s' no existe\n", mensaje.descripcion);
+        salir = true;
+    }
+    break;
+
         case 2:
             printf("Mensaje de tipo WRQ\n");
             strcpy(mensaje.descripcion, "Solicitud para escribir un archivo");
