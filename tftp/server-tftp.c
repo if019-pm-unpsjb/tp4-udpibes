@@ -6,9 +6,9 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include "constantes.h"
 
-#define MAX_DESC 500
-#define MAX_DATA 512
+
 
 struct mensaje_tftp
 {
@@ -16,11 +16,7 @@ struct mensaje_tftp
     char descripcion[500];
 };
 
-const int RRQ = 01;
-const int WRQ = 02;
-const int DATA = 03;
-const int ACK = 04;
-const int ERROR = 05;
+
 
 bool existeArchivo(struct mensaje_tftp mensaje)
 {
@@ -41,7 +37,7 @@ bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_
     {
         uint16_t opcode;
         uint16_t bloque;
-        char datos[512];
+        char datos[MAX_DATA];
     } paquete;
 
     struct
@@ -88,7 +84,7 @@ bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_
 
         bloque_num++;
 
-    } while (bytes_leidos == 512);
+    } while (bytes_leidos == MAX_DATA); //a chequear
 
     fclose(archivo);
     return true;
@@ -108,7 +104,7 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
     {
         uint16_t opcode;
         uint16_t bloque;
-        char datos[512];
+        char datos[MAX_DATA];
     } paquete;
 
     struct
@@ -174,7 +170,7 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
             return false;
         }
 
-        if (datos_len < 512)
+        if (datos_len < MAX_DATA)
         {
             // Último paquete recibido, termina recepción
             break;
@@ -269,10 +265,10 @@ case 1:
             break;
         case 3:
             printf("Mensaje de tipo DATA\n");
-            if (bytes_recibidos < 512)
+/*             if (bytes_recibidos < 512)
             {
                 salir = true;
-            }
+            } */
             if (existeArchivo(mensaje))
             {
                 printf("Error, el archivo '%s' ya existe.\n", mensaje.descripcion);
