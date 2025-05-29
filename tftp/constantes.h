@@ -2,12 +2,14 @@
 #define CONSTANTES_H
 
 #define MAX_DATA 512
-#define MAX_DESC 500
+#define MAX_DESCRIPCION 500
 #define RRQ 1
 #define WRQ 2
 #define DATA 3
 #define ACK 4
 #define ERROR 5
+
+#define PUERTO_SERVIDOR 6969
 
 
 //error codes
