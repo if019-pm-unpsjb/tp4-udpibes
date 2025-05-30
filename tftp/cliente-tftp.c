@@ -5,16 +5,12 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#include "constantes.h"
 
-#define MAX_DATA 512
-#define RRQ 1
-#define DATA 3
-#define ACK 4
-
-//Imprime los paquetes en un formato lindo
+// Imprime los paquetes en un formato lindo
 void imprimir_paquete(uint16_t bloque, const char *datos, size_t len)
 {
-    printf("--- Paquete bloque #%d, bytes: %zu ---\n", bloque, len);
+    printf("\n--- Paquete bloque #%d, bytes: %zu ---\n", bloque, len);
 
     printf("Data: ");
     for (size_t i = 0; i < len; i++)
@@ -35,6 +31,19 @@ int main(int argc, char *argv[])
     int puerto = atoi(argv[2]);
     char *archivo = argv[3];
 
+    // Verificar si el archivo ya existe en el cliente
+    FILE *archivo_destino = fopen(archivo, "rb");
+    if (archivo_destino != NULL)
+    {
+        fclose(archivo_destino);
+        fprintf(stderr, "Error: el archivo '%s' ya existe en el cliente.\n", archivo);
+        exit(EXIT_FAILURE);
+    }
+
+    // archivo_destino aun no se abre aca
+    archivo_destino = NULL;
+    int archivo_creado = 0;
+
     // Crear socket UDP
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0)
@@ -50,13 +59,13 @@ int main(int argc, char *argv[])
     servidor.sin_port = htons(puerto);
     inet_pton(AF_INET, ip, &servidor.sin_addr);
 
-    char modo[] = "octet"; //Modo (netascii, octet o mail)
+    char modo[] = "octet"; // Modo (netascii, octet o mail)
     size_t archivo_len = strlen(archivo);
     size_t modo_len = strlen(modo);
 
     // 2 bytes para opcode + nombre + 1 byte nulo + modo + 1 byte nulo
     size_t solicitud_len = 2 + archivo_len + 1 + modo_len + 1;
-    char buffer[516]; // tamaño máximo posible
+    char buffer[TAM_MAX_POSIBLE]; // tamaño máximo posible
 
     // Escribir opcode de 2 bytes
     buffer[0] = 0;
@@ -106,21 +115,37 @@ int main(int argc, char *argv[])
 
         uint16_t opcode = ntohs(paquete.opcode);
         uint16_t bloque = ntohs(paquete.bloque);
-        size_t datos_len = bytes_recibidos - 4; // Le resta el encabezado
+        size_t datos_len = bytes_recibidos - ENCABEZADO; // Le resta el encabezado
 
         if (opcode != DATA)
         {
-            fprintf(stderr, "Error: se esperaba DATA, pero se recibió opcode %d\n", opcode);
+            fprintf(stderr, "\nError: se esperaba DATA, pero se recibió opcode %d\n", opcode);
             break;
         }
 
         // Imprimir contenido recibido
         imprimir_paquete(bloque, paquete.datos, datos_len);
 
+        // Crear archivo recien al recibir el primer paquete valido
+        if (!archivo_creado)
+        {
+            archivo_destino = fopen(archivo, "wbx");
+            if (!archivo_destino)
+            {
+                perror("\nNo se pudo crear el archivo local");
+                close(sock);
+                exit(EXIT_FAILURE);
+            }
+            archivo_creado = 1;
+        }
+
+        // Guardar en archivo
+        fwrite(paquete.datos, 1, datos_len, archivo_destino);
+
         // Enviar ACK
         ack.opcode = htons(ACK);
         ack.bloque = htons(bloque);
-        printf("Enviando ACK:\n");
+        printf("\nEnviando ACK:\n");
         printf("  Opcode: %d\n", ntohs(ack.opcode));
         printf("  Bloque: %d\n\n", ntohs(ack.bloque));
 
@@ -138,7 +163,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    printf("\nTransferencia finalizada.\n");
+    printf("\nTransferencia finalizada.\n\n");
     close(sock);
+    if (archivo_destino != NULL)
+    {
+        fclose(archivo_destino);
+    }
     return 0;
 }

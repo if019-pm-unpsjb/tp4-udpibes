@@ -1,14 +1,15 @@
 #ifndef CONSTANTES_H
 #define CONSTANTES_H
 
+#define TAM_MAX_POSIBLE 516
 #define MAX_DATA 512
 #define MAX_DESC 500
+#define ENCABEZADO 4
 #define RRQ 1
 #define WRQ 2
 #define DATA 3
 #define ACK 4
 #define ERROR 5
-
 
 //error codes
 #define ERR_NOT_DEFINED 0   //Not defined, see error message (if any).
@@ -20,6 +21,5 @@
 #define ERR_UNKNOWN_TID 5       //Unknown transfer ID.
 #define ERR_FILE_EXISTS 6       //File already exists.
 #define ERR_NO_SUCH_USER 7      //No such user.
-
 
 #endif 

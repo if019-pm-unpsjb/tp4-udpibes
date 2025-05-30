@@ -16,8 +16,6 @@ struct mensaje_tftp
     char descripcion[500];
 };
 
-
-
 bool existeArchivo(struct mensaje_tftp mensaje)
 {
     return access(mensaje.descripcion, F_OK) == 0;
