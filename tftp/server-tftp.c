@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "constantes.h"
 #include <sys/time.h>
+#include <ctype.h>
 
 struct mensaje_tftp
 {
@@ -19,7 +20,6 @@ struct mensaje_error
     uint16_t opcode;
     uint16_t errorcode;
     char errmsg[MAX_DESCRIPCION];
-    u_int8_t separador;
 };
 
 void enviarMensajeError(int socket_udp, struct sockaddr_in direccion_cliente, int codigo_error, char *mensaje_error)
@@ -28,9 +28,12 @@ void enviarMensajeError(int socket_udp, struct sockaddr_in direccion_cliente, in
 
     error.opcode = ERROR;
     error.errorcode = codigo_error;
-    strcpy(error.errmsg, error.errmsg);
-    error.separador = 0;
-    sendto(socket_udp, &error, sizeof(error), 0, (struct sockaddr *)&direccion_cliente, sizeof(direccion_cliente));
+    snprintf(error.errmsg, sizeof(error.errmsg), "%s", mensaje_error);
+
+    // Calcular tamaño real del mensaje enviado (hasta el '\0' incluido)
+    size_t tamanio_msg = 4 + strlen(error.errmsg) + 1;
+    // error.separador = 0;
+    sendto(socket_udp, &error, tamanio_msg, 0, (struct sockaddr *)&direccion_cliente, sizeof(direccion_cliente));
 }
 
 bool existeArchivo(struct mensaje_tftp mensaje)
@@ -38,10 +41,19 @@ bool existeArchivo(struct mensaje_tftp mensaje)
     return access(mensaje.descripcion, F_OK) == 0;
 }
 
+void reestablecerTimeout(int socket_udp)
+{
+    struct timeval sin_timeout;
+    sin_timeout.tv_sec = 0;
+    sin_timeout.tv_usec = 0;
+
+    setsockopt(socket_udp, SOL_SOCKET, SO_RCVTIMEO, &sin_timeout, sizeof(sin_timeout));
+}
+
+// RRQ
 bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_in direccion_cliente)
 {
     FILE *archivo = fopen(mensaje.descripcion, "rb");
-    printf("Descripcion del mensaje %s\n", mensaje.descripcion);
     if (archivo == NULL)
     {
         perror("Error al abrir el archivo");
@@ -64,15 +76,23 @@ bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_
     socklen_t tam = sizeof(direccion_cliente);
     size_t bytes_leidos;
     uint16_t bloque_num = 1;
+    int intentos;
+    // esperar un segundo
+    struct timeval tv;
+    tv.tv_sec = 1;  // 1 segundo
+    tv.tv_usec = 0; // 0 microsegundos
 
-label:
+    setsockopt(socket_udp, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     do
     {
         bytes_leidos = fread(paquete.datos, 1, sizeof(paquete.datos), archivo);
         printf("Cantidad de datos enviados: %ld bytes\n", bytes_leidos);
         paquete.opcode = htons(DATA); // DATA
         paquete.bloque = htons(bloque_num);
-
+        intentos = 0;
+    reintentar:
+    printf("Enviando bloque numero:%d \n\n",bloque_num);
         if (sendto(socket_udp, &paquete, 4 + bytes_leidos, 0,
                    (struct sockaddr *)&direccion_cliente, tam) < 0)
         {
@@ -81,40 +101,46 @@ label:
             return false;
         }
 
-        /*      // esperar un segundo
-             struct timeval tv;
-             tv.tv_sec = 1;  // 1 segundo
-             tv.tv_usec = 0; // 0 microsegundos
-
-             setsockopt(socket_udp, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-      */
         // Esperar ACK del cliente
         ssize_t recvd = recvfrom(socket_udp, &ack, sizeof(ack), 0,
                                  (struct sockaddr *)&direccion_cliente, &tam);
+
+        printf("\nRecibiendo ACK:\n");
+        printf("  Opcode: %d\n", ntohs(ack.opcode));
+        printf("  Bloque: %d\n\n", ntohs(ack.bloque));
+
         if (recvd < 0)
         {
+            if (intentos < 2) // intenta 3 veces como mucho
+            {
+                printf("Se envia nuevamente el dato. Intento numero: %d \n", intentos);
+                intentos++; // si no se recibio el ACK, reintentar
+                goto reintentar;
+            }
+            enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "Se envio el mismo bloque 3 veces sin respuesta.");
             printf("Entro aca\n");
-            goto label;
+
             perror("Error al recibir ACK");
             fclose(archivo);
             return false;
         }
 
-        if (ntohs(ack.opcode) != ACK || ntohs(ack.bloque) != bloque_num)
+        if (ntohs(ack.opcode) != ACK || ntohs(ack.bloque) != bloque_num)    //hay que tener en cuenta que se puede errar por 1 en el ack
         {
-            fprintf(stderr, "ACK inválido\n");
+            printf("ACK inválido %d\n", ntohs(ack.bloque));
+            printf("ACK que queria%d\n", bloque_num);
             fclose(archivo);
             return false;
         }
         printf("ACK Recibido: Bloque %d\n", ntohs(ack.bloque));
         bloque_num++;
-
     } while (bytes_leidos == MAX_DATA); // a chequear
 
     fclose(archivo);
     return true;
 }
 
+// WRQ
 bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_in direccion_cliente)
 {
     if (access(mensaje.descripcion, F_OK) == 0)
@@ -123,7 +149,7 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
         enviarMensajeError(socket_udp, direccion_cliente, ERR_FILE_EXISTS, "El archivo ya existe");
         return false;
     }
-    FILE *archivo = fopen(mensaje.descripcion, "w");
+    FILE *archivo = fopen(mensaje.descripcion, "wb");
     printf("Descripcion del mensaje %s\n", mensaje.descripcion);
     if (archivo == NULL)
     {
@@ -148,6 +174,7 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
 
     socklen_t tam = sizeof(direccion_cliente);
     uint16_t bloque_esperado = 1;
+    int contador = 900000;
 
     while (1)
     {
@@ -175,7 +202,7 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
 
         if (bloque != bloque_esperado)
         {
-            //IMPORTANTE aca no deberia terminar. tiene que pedir de nuevo el que corresponde?
+            // IMPORTANTE aca no deberia terminar. tiene que pedir de nuevo el que corresponde?
             fprintf(stderr, "Bloque recibido fuera de orden: esperado %d, recibido %d\n", bloque_esperado, bloque);
             fclose(archivo);
             return false;
@@ -190,6 +217,9 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
         if (escritos != datos_len)
         {
             perror("Error al escribir en el archivo");
+            // no estoy seguro de este error
+            enviarMensajeError(socket_udp, direccion_cliente, ERR_DISK_FULL, "Error escribiendo el archivo");
+
             fclose(archivo);
             return false;
         }
@@ -198,15 +228,20 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
         ack.opcode = htons(ACK);
         ack.bloque = htons(bloque);
 
+        usleep(contador); // 400000 microsegundos = 0.4 segundos
+        contador = contador + 900000;
         if (sendto(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&direccion_cliente, tam) < 0)
         {
             perror("Error al enviar ACK");
             fclose(archivo);
             return false;
         }
+        printf("ACK N: %d enviado\n", bloque);
 
         if (datos_len < MAX_DATA)
         {
+            printf("Transferencia completada\n");
+
             // Último paquete recibido, termina recepción
             break;
         }
@@ -218,6 +253,20 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
     return true;
 }
 
+void imprimir_paquete(uint16_t bloque, const char *datos, size_t len)
+{
+    printf("\n--- Paquete bloque #%d, bytes: %zu ---\n", bloque, len);
+
+    printf("Data: ");
+    for (size_t i = 0; i < len; i++)
+    {
+        if (isprint((unsigned char)datos[i]))
+        {
+            putchar(datos[i]);
+        }
+    }
+    printf("\n\n");
+}
 int main(int argc, char *argv[])
 {
     int socket_udp;
@@ -233,7 +282,7 @@ int main(int argc, char *argv[])
 
     // Le pasamos tipo de direccion, internet y puerto a la estructura de datos
     servidor.sin_family = AF_INET;
-    servidor.sin_port = htons(PUERTO_SERVIDOR);
+    servidor.sin_port = htons(atoi(argv[1]));
     servidor.sin_addr.s_addr = INADDR_ANY;
 
     // Hace un bind en el socket con la estructura. El * es un puntero, el & es para que genere el puntero
@@ -244,8 +293,7 @@ int main(int argc, char *argv[])
 
     struct sockaddr_in direccion_cliente;
     socklen_t tam_direccion = sizeof(direccion_cliente);
-    bool salir = false;
-    while (!salir)
+    while (1)
     {
 
         printf("Esperando mensaje...\n");
@@ -268,30 +316,18 @@ int main(int argc, char *argv[])
             if (existeArchivo(mensaje))
             {
                 printf("El archivo '%s' existe\n", mensaje.descripcion);
-
-                // Guardar nombre original antes de reemplazarlo
-                char nombre_archivo[500];
-                strcpy(nombre_archivo, mensaje.descripcion);
-
-                // Opcional: agregar descripción informativa si querés
-                strcpy(mensaje.descripcion, "Solicitud para leer un archivo");
-
-                // Volver a poner el nombre correcto para enviarArchivo
-                strcpy(mensaje.descripcion, nombre_archivo);
-
                 enviarArchivo(mensaje, socket_udp, direccion_cliente);
             }
             else
             {
                 printf("El archivo '%s' no existe\n", mensaje.descripcion);
                 enviarMensajeError(socket_udp, direccion_cliente, ERR_FILE_NOT_FOUND, "El archivo no existe");
-                salir = true;
             }
             break;
 
         case 2:
             printf("Mensaje de tipo WRQ\n");
-            strcpy(mensaje.descripcion, "Solicitud para escribir un archivo");
+            recibirArchivo(mensaje, socket_udp, direccion_cliente);
             break;
         case 3:
             printf("Error, primer mensaje de tipo DATA\n");
@@ -299,25 +335,19 @@ int main(int argc, char *argv[])
             break;
         case 4:
             printf("Mensaje de tipo ACK\n");
+
             enviarMensajeError(socket_udp, direccion_cliente, ERR_ILLEGAL_TFTP_OPERATION, "Error, primer mensaje de tipo ACK");
 
             break;
         case 5:
             printf("Mensaje de tipo ERROR\n");
-            salir = true;
+            enviarMensajeError(socket_udp, direccion_cliente, ERR_ILLEGAL_TFTP_OPERATION, "Error, primer mensaje de tipo ERROR");
             break;
 
         default:
             break;
         }
-        /*         strcpy(ack.descripcion, "ACK");
-
-                // Enviar ACK al cliente
-                sendto(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&direccion_cliente, sizeof(direccion_cliente));
-         */
-        /*  printf("Recibido:\n");
-         printf("  Opcode: %d\n", mensaje.opcode);
-         printf("  Descripción: %s\n", mensaje.descripcion); */
+        reestablecerTimeout(socket_udp);
     }
     exit(EXIT_SUCCESS);
 }
