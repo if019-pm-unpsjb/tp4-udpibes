@@ -92,7 +92,7 @@ bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_
         paquete.bloque = htons(bloque_num);
         intentos = 0;
     reintentar:
-    printf("Enviando bloque numero:%d \n\n",bloque_num);
+        printf("Enviando bloque numero:%d \n\n", bloque_num);
         if (sendto(socket_udp, &paquete, 4 + bytes_leidos, 0,
                    (struct sockaddr *)&direccion_cliente, tam) < 0)
         {
@@ -117,7 +117,11 @@ bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_
                 intentos++; // si no se recibio el ACK, reintentar
                 goto reintentar;
             }
-            enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "Se envio el mismo bloque 3 veces sin respuesta.");
+            else
+            {
+                enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "Se envio el mismo bloque 3 veces sin respuesta.");
+            }
+            enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "No se pudo enviar el ACK");
             printf("Entro aca\n");
 
             perror("Error al recibir ACK");
@@ -125,7 +129,7 @@ bool enviarArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr_
             return false;
         }
 
-        if (ntohs(ack.opcode) != ACK || ntohs(ack.bloque) != bloque_num)    //hay que tener en cuenta que se puede errar por 1 en el ack
+        if (ntohs(ack.opcode) != ACK || ntohs(ack.bloque) != bloque_num) // hay que tener en cuenta que se puede errar por 1 en el ack
         {
             printf("ACK inválido %d\n", ntohs(ack.bloque));
             printf("ACK que queria%d\n", bloque_num);
@@ -174,8 +178,14 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
 
     socklen_t tam = sizeof(direccion_cliente);
     uint16_t bloque_esperado = 1;
-    int contador = 900000;
+    //int contador = 900000;
+    struct timeval tv;
+    tv.tv_sec = 1;  // 1 segundo
+    tv.tv_usec = 0; // 0 microsegundos
 
+    setsockopt(socket_udp, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    // PREGUNTAR A FRAN SI LOS DOS LADOS ESPERAN Y VUELVEN A MANDAR
+    int intentos = 0;
     while (1)
     {
         ssize_t bytes_recibidos = recvfrom(socket_udp, &paquete, sizeof(paquete), 0,
@@ -200,9 +210,12 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
             return false;
         }
 
+        // IMPORTANTE aca no deberia terminar. tiene que pedir de nuevo el que corresponde?
+        // IMPORTANTE aca no deberia terminar. tiene que pedir de nuevo el que corresponde?
+        // IMPORTANTE aca no deberia terminar. tiene que pedir de nuevo el que corresponde?
+        // IMPORTANTE aca no deberia terminar. tiene que pedir de nuevo el que corresponde?
         if (bloque != bloque_esperado)
         {
-            // IMPORTANTE aca no deberia terminar. tiene que pedir de nuevo el que corresponde?
             fprintf(stderr, "Bloque recibido fuera de orden: esperado %d, recibido %d\n", bloque_esperado, bloque);
             fclose(archivo);
             return false;
@@ -228,10 +241,29 @@ bool recibirArchivo(struct mensaje_tftp mensaje, int socket_udp, struct sockaddr
         ack.opcode = htons(ACK);
         ack.bloque = htons(bloque);
 
-        usleep(contador); // 400000 microsegundos = 0.4 segundos
-        contador = contador + 900000;
+    // usleep(contador); // 400000 microsegundos = 0.4 segundos
+    // contador = contador + 900000;
+
+    // PREGUNTAR A FRAN: conviene hacer una etiqueta o un while?
+    enviardata:
         if (sendto(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&direccion_cliente, tam) < 0)
         {
+
+            if (intentos < 2) // intenta 3 veces como mucho
+            {
+                printf("Se envia nuevamente el ACK. Intento numero: %d \n", intentos);
+                intentos++; // si no se recibio el ACK, reintentar
+                goto enviardata;
+            }
+            else
+            {
+                enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "Se envio el mismo ACK 3 veces sin respuesta.");
+                perror("Error al enviar ACK");
+                fclose(archivo);
+                return false;
+            }
+            enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "No se pudo enviar el ACK");
+
             perror("Error al enviar ACK");
             fclose(archivo);
             return false;
@@ -267,6 +299,7 @@ void imprimir_paquete(uint16_t bloque, const char *datos, size_t len)
     }
     printf("\n\n");
 }
+
 int main(int argc, char *argv[])
 {
     int socket_udp;
@@ -299,6 +332,10 @@ int main(int argc, char *argv[])
         printf("Esperando mensaje...\n");
         ssize_t bytes_recibidos = recvfrom(socket_udp, &mensaje, sizeof(mensaje), 0,
                                            (struct sockaddr *)&direccion_cliente, &tam_direccion);
+        
+        //se me ocurre que aca se puede hacer el fork?
+
+
         printf("Mensaje recibido: %zd bytes\n", bytes_recibidos);
         mensaje.opcode = ntohs(mensaje.opcode);
         printf("Mensaje de tipo %d recibido\n", mensaje.opcode);
