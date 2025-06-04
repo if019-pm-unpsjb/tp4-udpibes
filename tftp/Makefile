@@ -1,20 +1,21 @@
 CC=gcc
-CFLAGS=-Wall -Werror -g -pthread 
-BIN=./bin
+CFLAGS=-Wall -Werror -g -pthread
 
-PROGS=server-tftp
+CLIENT_SRC=cliente/cliente-tftp.c
+SERVER_SRC=servidor/server-tftp.c
 
-.PHONY: all
-all: $(PROGS)
+cliente-tftp: $(CLIENT_SRC)
+	$(CC) -o cliente/cliente-tftp $^ $(CFLAGS)
 
-LIST=$(addprefix $(BIN)/, $(PROGS))
+server-tftp: $(SERVER_SRC)
+	$(CC) -o servidor/server-tftp $^ $(CFLAGS)
 
-#server-tftp: server-tftp.c 
-#	$(CC) -o bin/$@ $^ $(CFLAGS)
+.PHONY: all clean zip
 
-.PHONY: clean
+all: cliente-tftp server-tftp
+
 clean:
-	rm -f $(LIST)
+	rm -f cliente/cliente-tftp servidor/server-tftp
 
 zip:
 	git archive --format zip --output ${USER}-TP4.zip HEAD
