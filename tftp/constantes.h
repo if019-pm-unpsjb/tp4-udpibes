@@ -1,6 +1,8 @@
 #ifndef CONSTANTES_H
 #define CONSTANTES_H
 
+#define MAX_PAQUETE 516
+#define TAM_MAX_POSIBLE 516
 #define MAX_DATA 512
 #define MAX_DESCRIPCION 500
 #define RRQ 1
@@ -11,6 +13,11 @@
 
 #define PUERTO_SERVIDOR 6969
 
+#define MAX_REINTENTOS 3
+
+#define TIMEOUT_SEGUNDOS 1
+
+#define MAX_REINTENTOS 3
 
 //error codes
 #define ERR_NOT_DEFINED 0   //Not defined, see error message (if any).
@@ -23,5 +30,9 @@
 #define ERR_FILE_EXISTS 6       //File already exists.
 #define ERR_NO_SUCH_USER 7      //No such user.
 
-
+typedef struct mensaje_tftp
+{
+    uint16_t opcode;
+    char descripcion[MAX_DESCRIPCION];
+} mensaje_tftp;
 #endif 
