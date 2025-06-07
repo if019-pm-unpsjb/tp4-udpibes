@@ -1,0 +1,2 @@
+#define MAX_CLIENTES 10
+#define BUFFER_SIZE 1024

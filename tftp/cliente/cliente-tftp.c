@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
         uint16_t bloque_esperado = 1;
         uint16_t ultimo_bloque_ack = 0;
         int reintentos_mismo_bloque = 0;
-        int contador = 400000;
+       // int contador = 400000;
         while (1)
         {
             int intentos = 0;
@@ -231,9 +231,9 @@ int main(int argc, char *argv[])
 
             ssize_t bytes_recibidos = recvfrom(sock, buffer, sizeof(buffer), 0,
                                                (struct sockaddr *)&servidor, &servidor_len);
-            usleep(contador); // 400000 microsegundos = 0.4 segundos
+/*             usleep(contador); // 400000 microsegundos = 0.4 segundos
             contador = contador + 900000;
-
+ */
             if (bytes_recibidos < 0)
             {
                 perror("Error al recibir DATA");
@@ -262,7 +262,7 @@ int main(int argc, char *argv[])
             size_t datos_len = bytes_recibidos - 4;
             char *datos = &buffer[4];
 
-            imprimir_data("recibido", bloque, datos, datos_len);
+            //imprimir_data("recibido", bloque, datos, datos_len);
 
             if (!archivo_creado)
             {
@@ -312,7 +312,7 @@ int main(int argc, char *argv[])
             *(uint16_t *)&ack[0] = htons(ACK);
             *(uint16_t *)&ack[2] = htons(bloque);
 
-            imprimir_ack("enviado", bloque, reintentos_mismo_bloque);
+            //imprimir_ack("enviado", bloque, reintentos_mismo_bloque);
 
             if (sendto(sock, ack, sizeof(ack), 0, (struct sockaddr *)&servidor, servidor_len) < 0)
             {
@@ -392,7 +392,7 @@ int main(int argc, char *argv[])
 
                 if (bloque_ack == 0)
                 {
-                    imprimir_ack("recibido", bloque_ack, intentos);
+                    //imprimir_ack("recibido", bloque_ack, intentos);
                     break; // ACK válido
                 }
             }
@@ -436,7 +436,7 @@ int main(int argc, char *argv[])
                     exit(EXIT_FAILURE);
                 }
 
-                imprimir_data("enviado", bloque, &buffer_envio[4], bytes_leidos);
+             //   imprimir_data("enviado", bloque, &buffer_envio[4], bytes_leidos);
 
                 ssize_t recibidos = recvfrom(sock, buffer_recepcion, sizeof(buffer_recepcion), 0,
                                              (struct sockaddr *)&servidor, &servidor_len);
@@ -465,7 +465,7 @@ int main(int argc, char *argv[])
                     uint16_t bloque_ack = ntohs(*(uint16_t *)&buffer_recepcion[2]);
                     if (bloque_ack == bloque)
                     {
-                        imprimir_ack("recibido", bloque_ack, intentos);
+                        //imprimir_ack("recibido", bloque_ack, intentos);
                         break;
                     }
                     else

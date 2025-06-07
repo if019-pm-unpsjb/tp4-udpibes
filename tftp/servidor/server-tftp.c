@@ -16,7 +16,7 @@ void enviarMensajeError(int socket_udp, struct sockaddr_in direccion_cliente, in
 
     char paquete_error[TAM_MAX_POSIBLE];
     uint16_t opcode_error = htons(ERROR);
-    uint16_t codigo_error_htons = htons(codigo_err); // 0 es not defined
+    uint16_t codigo_error_htons = htons(codigo_err); 
     size_t longitud_mensaje = strlen(mensaje_error);
     size_t tamanio_msg = 4 + longitud_mensaje + 1;
 
