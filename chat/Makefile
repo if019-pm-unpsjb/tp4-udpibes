@@ -14,7 +14,7 @@ server-chat: server-chat.c
 
 cliente-chat: cliente-chat.c 
 	$(CC) -o ./$@ $^ $(CFLAGS)
-
+	
 .PHONY: clean
 clean:
 	rm -f $(LIST)

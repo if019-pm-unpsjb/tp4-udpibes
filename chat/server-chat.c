@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <sys/select.h>
 #include "constantes.h"
+#include <asm-generic/socket.h>
 
 // Estructura que representa un cliente conectado
 typedef struct
@@ -16,25 +17,42 @@ typedef struct
     int socket;              // Descriptor de socket del cliente
     struct sockaddr_in addr; // Direccion IP y puerto del cliente
     int puerto_escucha;      // este es el puerto en el que el cliente escucha
+    char nombre_usuario[MAX_TAM_NOMBRE_USUARIO];
 } Cliente;
 
 Cliente clientes[MAX_CLIENTES]; // Arreglo que almacena los clientes conectados
 int numero_clientes = 0;        // Contador actual de clientes conectados
 
 // Funcion que envia al cliente la lista de IPs y puertos conectados
-void enviar_lista_ips(int cliente_socket)
+void enviar_lista_usuarios(int cliente_socket)
 {
-    char lista[BUFFER_SIZE] = "Clientes conectados:\n"; // Mensaje base
+    char lista[BUFFER_SIZE] = "Usuarios conectados:\n";
+    int cantidad = 0;
+
     for (int i = 0; i < numero_clientes; i++)
     {
-        char ip[INET_ADDRSTRLEN];                                              // Buffer para direccion IP
-        inet_ntop(AF_INET, &(clientes[i].addr.sin_addr), ip, INET_ADDRSTRLEN); // Convierte IP a string
+        if (clientes[i].socket == cliente_socket)
+            continue; // Saltear al usuario que hizo la solicitud
+
+        char ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(clientes[i].addr.sin_addr), ip, INET_ADDRSTRLEN);
         int puerto = clientes[i].puerto_escucha;
-        char entrada[64];
-        snprintf(entrada, sizeof(entrada), "%s:%d\n", ip, puerto); // Construye la linea de un cliente
-        strcat(lista, entrada);                                    // Añade esa linea al mensaje final
+
+        char entrada[128];
+        snprintf(entrada, sizeof(entrada), "%s (%s:%d)\n", clientes[i].nombre_usuario, ip, puerto);
+        strcat(lista, entrada);
+        cantidad++;
     }
-    send(cliente_socket, lista, strlen(lista), 0); // Envia el mensaje al cliente
+
+    if (cantidad == 0)
+    {
+        char aviso[] = "No hay otros usuarios conectados.\n";
+        send(cliente_socket, aviso, strlen(aviso), 0);
+    }
+    else
+    {
+        send(cliente_socket, lista, strlen(lista), 0);
+    }
 }
 
 // Agrega un nuevo cliente al arreglo de clientes conectados
@@ -63,6 +81,18 @@ void eliminar_cliente(int indice)
     numero_clientes--;
 }
 
+int nombre_usuario_existe(const char *nombre)
+{
+    for (int i = 0; i < numero_clientes; i++)
+    {
+        if (strcmp(clientes[i].nombre_usuario, nombre) == 0)
+        {
+            return 1; // Ya existe
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -85,6 +115,11 @@ int main(int argc, char *argv[])
     servidor_addr.sin_port = htons(puerto);     // Asigna el puerto que se paso com o parametro
     servidor_addr.sin_addr.s_addr = INADDR_ANY; // Acepta conexiones de cualquier ip
 
+    int opt = 1;
+    if (setsockopt(servidor_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt) < 0)) {
+        perror("setsocketopt");
+        exit(EXIT_FAILURE);
+    }
     if (bind(servidor_socket, (struct sockaddr *)&servidor_addr, sizeof(servidor_addr)) < 0)
     {
         perror("Bind");
@@ -130,7 +165,7 @@ int main(int argc, char *argv[])
                             fdmax = nuevo_socket; // Actualiza el maximo descriptor
 
                         agregar_cliente(nuevo_socket, cliente_addr); // Añade el cliente a la lista
-                        enviar_lista_ips(nuevo_socket);              // Envia la lista de ips al nuevo cliente
+                        // enviar_lista_ips(nuevo_socket);              // Envia la lista de ips al nuevo cliente
 
                         // Muestra informacion del nuevo cliente
                         printf("Nuevo cliente conectado: IP: %s , Puerto: %d\n", inet_ntoa(cliente_addr.sin_addr), ntohs(cliente_addr.sin_port));
@@ -157,8 +192,35 @@ int main(int argc, char *argv[])
                     {
                         buffer[bytes_recibidos] = '\0'; // Agrega /0
                         printf("Comando recibido de socket %d: %s\n", i, buffer);
+                        printf("Bytes recibidos: %d\n", bytes_recibidos);
 
-                        if (strncmp(buffer, "/puerto ", 8) == 0)
+                        if (strncmp(buffer, "/nombre ", 8) == 0)
+                        {
+                            char nombre[MAX_TAM_NOMBRE_USUARIO];
+                            sscanf(buffer + 8, "%s", nombre);
+
+                            if (nombre_usuario_existe(nombre))
+                            {
+                                char msg[] = "/error\n";
+                                send(i, msg, strlen(msg), 0);
+                            }
+                            else
+                            {
+                                char msg[] = "/ok\n";
+                                send(i, msg, strlen(msg), 0);
+                                for (int j = 0; j < numero_clientes; j++)
+                                {
+                                    if (clientes[j].socket == i)
+                                    {
+                                        strncpy(clientes[j].nombre_usuario, nombre, MAX_TAM_NOMBRE_USUARIO - 1);
+                                        clientes[j].nombre_usuario[MAX_TAM_NOMBRE_USUARIO - 1] = '\0';
+                                        enviar_lista_usuarios(i);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        else if (strncmp(buffer, "/puerto ", 8) == 0)
                         {
                             int puerto_escucha;
                             sscanf(buffer + 8, "%d", &puerto_escucha);
@@ -178,47 +240,66 @@ int main(int argc, char *argv[])
                         }
                         else if (strncmp(buffer, "/c ", 3) == 0)
                         {
-                            char ip_destino[INET_ADDRSTRLEN];
-                            int puerto_destino;
-                            sscanf(buffer + 3, "%[^:]:%d", ip_destino, &puerto_destino);
+                            char nombre_destino[MAX_TAM_NOMBRE_USUARIO];
+                            sscanf(buffer + 3, "%s", nombre_destino);
 
+                            int idx_emisor = -1;
                             for (int j = 0; j < numero_clientes; j++)
                             {
-                                char ip_cliente[INET_ADDRSTRLEN];
-                                inet_ntop(AF_INET, &(clientes[j].addr.sin_addr), ip_cliente, INET_ADDRSTRLEN);
-
-                                // ACÁ USAMOS puerto_escucha EN VEZ DEL PUERTO DEL SOCKET
-                                if (strcmp(ip_cliente, ip_destino) == 0 && clientes[j].puerto_escucha == puerto_destino)
+                                if (clientes[j].socket == i)
                                 {
-                                    // Obtener IP y puerto del que inició la conexión
-                                    char ip_origen[INET_ADDRSTRLEN];
-                                    struct sockaddr_in origen_addr;
-                                    socklen_t len = sizeof(origen_addr);
-                                    getpeername(i, (struct sockaddr *)&origen_addr, &len);
-                                    inet_ntop(AF_INET, &origen_addr.sin_addr, ip_origen, INET_ADDRSTRLEN);
-
-                                    // Usamos el puerto_escucha también
-                                    int puerto_origen = 0;
-                                    for (int k = 0; k < numero_clientes; k++)
-                                    {
-                                        if (clientes[k].socket == i)
-                                        {
-                                            puerto_origen = clientes[k].puerto_escucha;
-                                            break;
-                                        }
-                                    }
-
-                                    char msg[BUFFER_SIZE];
-                                    snprintf(msg, sizeof(msg), "/conectar %s %d\n", ip_origen, puerto_origen);
-                                    send(clientes[j].socket, msg, strlen(msg), 0);
-
-                                    printf("Le dije a %s:%d que se conecte con %s:%d\n",
-                                           ip_cliente, clientes[j].puerto_escucha, ip_origen, puerto_origen);
+                                    idx_emisor = j;
                                     break;
                                 }
                             }
-                        }
 
+                            if (strcmp(nombre_destino, "all") == 0)
+                            {
+                                // Modo difusión
+                                for (int j = 0; j < numero_clientes; j++)
+                                {
+                                    if (j != idx_emisor)
+                                    {
+                                        char msg[BUFFER_SIZE];
+                                        snprintf(msg, sizeof(msg), "/conectar %s %d\n",
+                                                 inet_ntoa(clientes[j].addr.sin_addr),
+                                                 clientes[j].puerto_escucha);
+                                        send(clientes[idx_emisor].socket, msg, strlen(msg), 0);
+                                    }
+                                }
+                                printf("Cliente %s pidió conexión con todos\n", clientes[idx_emisor].nombre_usuario);
+                            }
+                            else
+                            {
+                                // Conexión normal 1 a 1
+                                int idx_receptor = -1;
+                                for (int j = 0; j < numero_clientes; j++)
+                                {
+                                    if (strcmp(clientes[j].nombre_usuario, nombre_destino) == 0)
+                                    {
+                                        idx_receptor = j;
+                                        break;
+                                    }
+                                }
+
+                                if (idx_receptor != -1 && idx_emisor != -1)
+                                {
+                                    char msg[BUFFER_SIZE];
+                                    snprintf(msg, sizeof(msg), "/conectar %s %d\n",
+                                             inet_ntoa(clientes[idx_receptor].addr.sin_addr),
+                                             clientes[idx_receptor].puerto_escucha);
+                                    send(clientes[idx_emisor].socket, msg, strlen(msg), 0);
+
+                                    printf("Le dije a %s que se conecte con %s\n",
+                                           clientes[idx_emisor].nombre_usuario,
+                                           clientes[idx_receptor].nombre_usuario);
+                                }
+                            }
+                        }
+                        else if (strncmp(buffer, "/info", 5) == 0)
+                        {
+                            enviar_lista_usuarios(i);
+                        }
                         else
                         {
                             char msg[] = "Comando no reconocido.\n";
