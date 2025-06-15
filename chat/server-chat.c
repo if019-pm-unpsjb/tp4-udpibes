@@ -114,12 +114,12 @@ int main(int argc, char *argv[])
     servidor_addr.sin_family = AF_INET;
     servidor_addr.sin_port = htons(puerto);     // Asigna el puerto que se paso com o parametro
     servidor_addr.sin_addr.s_addr = INADDR_ANY; // Acepta conexiones de cualquier ip
-
+/* 
     int opt = 1;
     if (setsockopt(servidor_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt) < 0)) {
         perror("setsocketopt");
         exit(EXIT_FAILURE);
-    }
+    } */
     if (bind(servidor_socket, (struct sockaddr *)&servidor_addr, sizeof(servidor_addr)) < 0)
     {
         perror("Bind");

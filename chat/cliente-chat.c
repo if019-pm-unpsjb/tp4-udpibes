@@ -33,6 +33,28 @@ ConexionChat *conexion_chat_actual = NULL;              // Puntero a la estructu
 pthread_mutex_t chat_mutex = PTHREAD_MUTEX_INITIALIZER; // Mutex para sincronizar el acceso a la conexion actual
 char nombre_personal[MAX_TAM_NOMBRE_USUARIO];           // Reservamos espacio para el nombre
 
+ConexionChat usuarios_conectado[MAX_USUARIOS_CONECTADOS];
+int cantidad_usuarios_conectados = 0;
+
+void eliminar_conexion_por_socket(ConexionChat usuarios[], int socket_objetivo)
+{
+    for (int i = 0; i < cantidad_usuarios_conectados; i++)
+    {
+        if (usuarios[i].socket == socket_objetivo)
+        {
+            // Mover elementos hacia la izquierda
+            for (int j = i; j < cantidad_usuarios_conectados; j++)
+            {
+                usuarios[j] = usuarios[j + 1];
+            }
+            break;
+        }
+    }
+    memset(&usuarios_conectado[cantidad_usuarios_conectados], 0, sizeof(ConexionChat));
+
+    cantidad_usuarios_conectados--;
+}
+
 void enviar_archivo(int socket, const char *nombre_archivo)
 {
     if (socket < 0 || nombre_archivo == NULL)
@@ -60,7 +82,7 @@ void enviar_archivo(int socket, const char *nombre_archivo)
     info.tamano_archivo = tam_archivo;
 
     // Enviar estructura al cliente
-    if (send(socket, &info, sizeof(info), 0) < 0)
+    if (send(socket, &info, TAM_PAQUETE, 0) < 0)
     {
         perror("Error al enviar metadatos del archivo");
         fclose(archivo);
@@ -71,7 +93,7 @@ void enviar_archivo(int socket, const char *nombre_archivo)
     size_t leidos;
     while ((leidos = fread(buffer, 1, TAM_PAQUETE, archivo)) > 0)
     {
-        if (send(socket, buffer, leidos, 0) < 0)
+        if (send(socket, buffer, TAM_PAQUETE, 0) < 0)
         {
             perror("Error al enviar datos del archivo");
             break;
@@ -91,17 +113,19 @@ void recibir_archivo(int socket)
 
     // Recibir los metadatos
     Datos_archivo info;
-    int recibidos = recv(socket, &info, sizeof(info), 0);
+    int recibidos = recv(socket, &info, TAM_PAQUETE, 0);
     if (recibidos <= 0)
     {
         perror("Error al recibir metadatos del archivo");
         return;
     }
 
-    printf("Recibiendo archivo '%s' de %d bytes...\n", info.nombre_archivo, info.tamano_archivo);
+    printf("Recibiendo archivo '%s' de %d bytes, enviado por %s\n", info.nombre_archivo, info.tamano_archivo, conexion_chat_actual->nombre);
+    char nombre_archivo[MAX_TAM_NOMBRE_ARCHIVO + MAX_TAM_NOMBRE_USUARIO];
+    snprintf(nombre_archivo, sizeof(nombre_archivo), "%s_%s", conexion_chat_actual->nombre, info.nombre_archivo);
 
     // Abrir archivo con el nombre original
-    FILE *archivo = fopen(info.nombre_archivo, "wb");
+    FILE *archivo = fopen(nombre_archivo, "wb");
     if (!archivo)
     {
         perror("No se pudo crear archivo local");
@@ -113,10 +137,10 @@ void recibir_archivo(int socket)
     int total_recibido = 0;
     while (total_recibido < info.tamano_archivo)
     {
-        int restante = info.tamano_archivo - total_recibido;
-        int a_recibir = (restante < TAM_PAQUETE) ? restante : TAM_PAQUETE;
+        // int restante = info.tamano_archivo - total_recibido;
+        // int a_recibir = (restante < TAM_PAQUETE) ? restante : TAM_PAQUETE;
 
-        int bytes = recv(socket, buffer, a_recibir, 0);
+        int bytes = recv(socket, buffer, TAM_PAQUETE, 0);
         if (bytes <= 0)
         {
             perror("Error al recibir datos del archivo");
@@ -142,10 +166,13 @@ void *escuchar_chat(void *arg)
         int bytes = recv(conexion->socket, buffer, TAM_PAQUETE, 0); // Espera mensajes del otro cliente
         if (bytes <= 0)
         {
-            printf("\33[2K\rSe cerro la conexion de chat con %s:%d.\n> ",
-                   inet_ntoa(conexion->addr.sin_addr),
-                   ntohs(conexion->addr.sin_port));
+            printf("\33[2K\rSe cerro la conexion de chat con %s.\n> ",
+                   conexion->nombre);
             fflush(stdout);
+            eliminar_conexion_por_socket(usuarios_conectado, conexion->socket);
+
+            // Reducís el contador total
+            memset(&usuarios_conectado[cantidad_usuarios_conectados], 0, sizeof(ConexionChat));
 
             close(conexion->socket); // Cierra el socket
             free(conexion);          // Libera la memoria asignada a la estructura
@@ -191,16 +218,16 @@ int crear_socket_escucha(int puerto)
     escucha_addr.sin_port = htons(puerto);     // Convierte a formato de red
     escucha_addr.sin_addr.s_addr = INADDR_ANY; // Acepta conexiones de cualquier IP
 
-    int opt = 1;
-    if (setsockopt(escucha_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt) < 0)) {
-        perror("setsocketopt");
-        exit(EXIT_FAILURE);
-    }
+    // int opt = 1;
     if (bind(escucha_socket, (struct sockaddr *)&escucha_addr, sizeof(escucha_addr)) < 0)
     {
         perror("bind escucha");
         exit(1);
     }
+    /*     if (setsockopt(escucha_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt) < 0)) {
+            perror("setsocketopt");
+            exit(EXIT_FAILURE);
+        } */
 
     if (listen(escucha_socket, 5) < 0)
     {
@@ -250,6 +277,8 @@ void iniciar_conexion_entrante(int escucha_socket)
         conexion->socket = nuevo_socket;
         conexion->addr = cliente_addr;
         strncpy(conexion->nombre, nombre_auxiliar, MAX_TAM_NOMBRE_USUARIO);
+        usuarios_conectado[cantidad_usuarios_conectados] = *conexion;
+        cantidad_usuarios_conectados++;
 
         // Guarda la conexion actual como la activa
         pthread_mutex_lock(&chat_mutex);
@@ -295,6 +324,9 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     conexion->socket = sock;
     conexion->addr = destino;
     strncpy(conexion->nombre, nombre_receptor, MAX_TAM_NOMBRE_USUARIO);
+    usuarios_conectado[cantidad_usuarios_conectados] = *conexion;
+
+    cantidad_usuarios_conectados++;
 
     pthread_mutex_lock(&chat_mutex);
     conexion_chat_actual = conexion;
@@ -305,45 +337,46 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     pthread_create(&thread, NULL, escuchar_chat, conexion);
     pthread_detach(thread);
 }
-#define TAM_MAX_MENSAJE 1024
 
-void enviar_con_prefijo(int servidor_socket, const char *linea)
+void enviar_mensaje_o_archivo(char linea[BUFFER_SIZE], ConexionChat conexion)
 {
-    const char *prefijo = "/msg ";
-    size_t largo_prefijo = strlen(prefijo);
-    size_t largo_mensaje = strlen(linea);
-    size_t total = largo_prefijo + largo_mensaje;
-
-    // Reservamos buffer suficiente para concatenar
-    char *mensaje_completo = malloc(total + 1);
-    if (!mensaje_completo)
+    if (strncmp(linea, "/archivo ", 9) == 0) // ✅ BIEN
     {
-        perror("malloc");
-        return;
+        send(conexion.socket, linea, TAM_PAQUETE, 0);
+        char nombre_archivo[256];                   // Asegurate de que sea suficientemente grande
+        sscanf(linea + 9, "%255s", nombre_archivo); // Extrae el nombre (sin espacios)
+        enviar_archivo(conexion.socket, nombre_archivo);
     }
-
-    // Concatenamos "/msg " + linea
-    strcpy(mensaje_completo, prefijo);
-    strcat(mensaje_completo, linea);
-
-    // Enviamos en fragmentos de hasta 1024 bytes
-    size_t enviados = 0;
-    while (enviados < total)
+    else
     {
-        size_t por_enviar = TAM_MAX_MENSAJE;
-        if (total - enviados < TAM_MAX_MENSAJE)
-            por_enviar = total - enviados;
+        // enviar_con_prefijo(servidor_socket, linea);
+        send(conexion.socket, linea, TAM_PAQUETE, 0);
+    }
+}
 
-        ssize_t bytes = send(servidor_socket, mensaje_completo + enviados, por_enviar, 0);
-        if (bytes < 0)
+bool existe_conexion(char nombre[MAX_TAM_NOMBRE_USUARIO])
+{
+    for (int i = 0; i < cantidad_usuarios_conectados; i++)
+    {
+        if (strcmp(usuarios_conectado[i].nombre, nombre) == 0)
         {
-            perror("send");
-            break;
+            return true;
         }
-        enviados += bytes;
     }
+    return false;
+}
 
-    free(mensaje_completo);
+void conexion_si_existe(char nombre[MAX_TAM_NOMBRE_USUARIO])
+{
+    for (int i = 0; i < cantidad_usuarios_conectados; i++)
+    {
+        if (strcmp(usuarios_conectado[i].nombre, nombre) == 0)
+        {
+            conexion_chat_actual = &usuarios_conectado[i];
+            return;
+        }
+    }
+    return;
 }
 
 int main(int argc, char *argv[])
@@ -416,6 +449,15 @@ int main(int argc, char *argv[])
         }
     }
 
+    printf("\33[2K\r\nComandos posibles:\n\
+>/info -> lista todos los usuarios disponibles\n\
+>/c nombre_usuario -> establece una conexion con el usuario que tenga ese nombre\n\
+>/c @all -> envia mensaje a todos los usuarios con los que se ha conectado previamente\n\
+>/c @allall -> envia mensaje a todos los usuarios conectados en el servidor\n\
+>/actual -> informa con quien estas chateando\n\
+>/archivo nombre_archivo -> envia archivo al usuario con el que esta conectado\n\
+> ");
+
     // Envia al servidor el puerto en el que este cliente estara escuchando
     char mensaje[64];
     snprintf(mensaje, sizeof(mensaje), "/puerto %d\n", puerto_escucha);
@@ -433,6 +475,7 @@ int main(int argc, char *argv[])
     // ojo que deberia ser el mas grande de todos
     int fdmax = (escucha_socket > servidor_socket) ? escucha_socket : servidor_socket;
 
+    bool difusion = false;
     while (1)
     {
         FD_ZERO(&read_fds);
@@ -451,6 +494,20 @@ int main(int argc, char *argv[])
         {
             char linea[BUFFER_SIZE];
             fgets(linea, sizeof(linea), stdin); // Lee comando o mensaje del usuario
+
+            // esto habria que ponerlo en lugar de todos los printf, es un bardo porque encima la variable difusion deberia ser global
+            /*             if (difusion)
+                        {
+                            printf("\33[2K\r\n[MENSAJE PARA TODOS]> ");
+                        }
+                        else if (conexion_chat_actual != NULL)
+                        {
+                            printf("\33[2K\r\n[MENSAJE PARA %s]> ", conexion_chat_actual->nombre);
+                        }
+                        else
+                        {
+                            printf("\33[2K\r\n> ");
+                        } */
             printf("\33[2K\r\n> ");
             fflush(stdout);
             size_t len = strlen(linea);
@@ -458,14 +515,25 @@ int main(int argc, char *argv[])
             {
                 linea[len - 1] = '\0';
             }
-            if (strncmp(linea, "/c ", 3) == 0)
+            if (strcmp(linea, "/c @all") == 0)
+            {
+                difusion = true;
+            }
+            else if (strncmp(linea, "/c ", 3) == 0)
             {
                 char mensaje[64];
+                difusion = false;
 
                 sscanf(linea + 3, "%31s", ultimo_nombre_receptor); // guarda el nombre ingresado
-
-                snprintf(mensaje, sizeof(mensaje), "/c %s\n", ultimo_nombre_receptor);
-                send(servidor_socket, mensaje, strlen(mensaje), 0);
+                if (existe_conexion(ultimo_nombre_receptor))
+                {
+                    conexion_si_existe(ultimo_nombre_receptor);
+                }
+                else
+                {
+                    snprintf(mensaje, sizeof(mensaje), "/c %s\n", ultimo_nombre_receptor);
+                    send(servidor_socket, mensaje, strlen(mensaje), 0);
+                }
             }
             else if (strcmp(linea, "/info") == 0)
             {
@@ -474,20 +542,19 @@ int main(int argc, char *argv[])
             else
             {
                 pthread_mutex_lock(&chat_mutex);
+
                 if (conexion_chat_actual != NULL) // Si hay una conexion de chat activa, envia alli
                 {
-                    if (strncmp(linea, "/archivo ", 9) == 0) // ✅ BIEN
+                    if (difusion)
                     {
-                        send(conexion_chat_actual->socket, linea, strlen(linea), 0);
-                        char nombre_archivo[256];                   // Asegurate de que sea suficientemente grande
-                        sscanf(linea + 9, "%255s", nombre_archivo); // Extrae el nombre (sin espacios)
-                        enviar_archivo(conexion_chat_actual->socket, nombre_archivo);
+                        for (int i = 0; i < cantidad_usuarios_conectados; i++)
+                        {
+                            enviar_mensaje_o_archivo(linea, usuarios_conectado[i]);
+                        }
                     }
                     else
                     {
-                        // enviar_con_prefijo(servidor_socket, linea);
-
-                        send(conexion_chat_actual->socket, linea, strlen(linea), 0);
+                        enviar_mensaje_o_archivo(linea, *conexion_chat_actual);
                     }
                 }
                 else
