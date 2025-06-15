@@ -10,8 +10,11 @@ all: $(PROGS)
 LIST=$(addprefix $(BIN)/, $(PROGS))
 
 server-chat: server-chat.c 
-	$(CC) -o bin/$@ $^ $(CFLAGS)
+	$(CC) -o ./$@ $^ $(CFLAGS)
 
+cliente-chat: cliente-chat.c 
+	$(CC) -o ./$@ $^ $(CFLAGS)
+	
 .PHONY: clean
 clean:
 	rm -f $(LIST)
