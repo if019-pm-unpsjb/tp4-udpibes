@@ -539,6 +539,24 @@ int main(int argc, char *argv[])
             {
                 send(servidor_socket, linea, strlen(linea), 0);
             }
+            else if (strcmp(linea, "/actual") == 0)
+            {
+                pthread_mutex_lock(&chat_mutex);
+                if (conexion_chat_actual != NULL)
+                {
+                    printf("\33[2K\rEstas chateando con: %s\n> ", conexion_chat_actual->nombre);
+                }
+                else if (difusion)
+                {
+                    printf("\33[2K\rEstas en modo difusion (@all)\n> ");
+                }
+                else
+                {
+                    printf("\33[2K\rNo hay chat activo\n\n> ");
+                }
+                fflush(stdout);
+                pthread_mutex_unlock(&chat_mutex);
+            }
             else
             {
                 pthread_mutex_lock(&chat_mutex);
