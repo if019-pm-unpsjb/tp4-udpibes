@@ -218,16 +218,17 @@ int crear_socket_escucha(int puerto)
     escucha_addr.sin_port = htons(puerto);     // Convierte a formato de red
     escucha_addr.sin_addr.s_addr = INADDR_ANY; // Acepta conexiones de cualquier IP
 
-    // int opt = 1;
+    int opt = 1;
+    if (setsockopt(escucha_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    {
+        perror("setsocketopt");
+        exit(EXIT_FAILURE);
+    }
     if (bind(escucha_socket, (struct sockaddr *)&escucha_addr, sizeof(escucha_addr)) < 0)
     {
         perror("bind escucha");
         exit(1);
     }
-    /*     if (setsockopt(escucha_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt) < 0)) {
-            perror("setsocketopt");
-            exit(EXIT_FAILURE);
-        } */
 
     if (listen(escucha_socket, 5) < 0)
     {
@@ -299,7 +300,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     int sock = socket(AF_INET, SOCK_STREAM, 0); // Crea socket TCP
     struct sockaddr_in destino;
     memset(&destino, 0, sizeof(destino));
-    printf("\33[2K\rIntentando conectar a %s:%d...\n> ", ip, puerto);
+    printf("\33[2K\rIntentando conectar a %s:%d...\n\n> ", ip, puerto);
     fflush(stdout);
 
     destino.sin_family = AF_INET;
@@ -402,13 +403,13 @@ int main(int argc, char *argv[])
     if (connect(servidor_socket, (struct sockaddr *)&servidor_addr, sizeof(servidor_addr)) < 0)
     {
         perror("connect servidor");
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
     int disponible = 0;
     while (!disponible)
     {
-        printf("\33[2K\rIngrese su nombre con el que lo reconocerán otros usuarios: \n> ");
+        printf("\33[2K\rIngrese el nombre con el que lo reconocerán otros usuarios: \n\n> ");
         fflush(stdout);
 
         scanf("%31s", nombre_personal); // Leemos hasta 99 caracteres (dejamos 1 para el '\0')
@@ -426,7 +427,7 @@ int main(int argc, char *argv[])
 
             if (strncmp(buffer, "/error", 6) == 0)
             {
-                printf("\33[2K\r\nNombre rechazado: %s ,por favor ingrese otro nombre\n> ", buffer + 7); // Muestra el mensaje de error
+                printf("\33[2K\r\nNombre rechazado, por favor ingrese otro nombre\n\n> "); // Muestra el mensaje de error
                 fflush(stdout);
             }
             else if (strncmp(buffer, "/ok", 3) == 0)
@@ -445,7 +446,7 @@ int main(int argc, char *argv[])
         else
         {
             perror("Error al recibir respuesta del servidor");
-            break;
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -466,7 +467,7 @@ int main(int argc, char *argv[])
     // Crea el socket de escucha para otros clientes
     int escucha_socket = crear_socket_escucha(puerto_escucha);
 
-    printf("\33[2K\rCliente iniciado. Esperando conexiones en puerto %d...\n> ", puerto_escucha);
+    printf("\33[2K\rCliente iniciado. Esperando conexiones en puerto %d...\n\n> ", puerto_escucha);
     fflush(stdout);
 
     // Prepara para monitorear multiples entradas con select()
@@ -519,6 +520,13 @@ int main(int argc, char *argv[])
             {
                 difusion = true;
             }
+            else if (strcmp(linea, "/c @allall") == 0)
+            {
+                //VER EL TEMA DE QUE LOS RECEPTORES NO MUESTRA SU NOMBRE. TRATE DE HACER QUE LE PREGUNTARA A LOS CLIENTES EL NOMBRE Y QUE RESPONDIERAN CON EL MISMO (SIN METER AL SERVER), PERO NO FUNCIONO Y ME PARECE UN BARDO
+                difusion = true;
+                ultimo_nombre_receptor[0] = '\0'; // array vacio porque no hay un unico receptor
+                send(servidor_socket, linea, strlen(linea), 0);
+            }
             else if (strncmp(linea, "/c ", 3) == 0)
             {
                 char mensaje[64];
@@ -542,13 +550,13 @@ int main(int argc, char *argv[])
             else if (strcmp(linea, "/actual") == 0)
             {
                 pthread_mutex_lock(&chat_mutex);
-                if (conexion_chat_actual != NULL)
-                {
-                    printf("\33[2K\rEstas chateando con: %s\n> ", conexion_chat_actual->nombre);
-                }
-                else if (difusion)
+                if (difusion)
                 {
                     printf("\33[2K\rEstas en modo difusion (@all)\n> ");
+                }
+                else if (conexion_chat_actual != NULL)
+                {
+                    printf("\33[2K\rEstas chateando con: %s\n> ", conexion_chat_actual->nombre);
                 }
                 else
                 {
