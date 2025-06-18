@@ -116,10 +116,11 @@ int main(int argc, char *argv[])
     servidor_addr.sin_addr.s_addr = INADDR_ANY; // Acepta conexiones de cualquier ip
 
     int opt = 1;
-    if (setsockopt(servidor_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    if (setsockopt(servidor_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    {
         perror("setsocketopt");
         exit(EXIT_FAILURE);
-    } 
+    }
     if (bind(servidor_socket, (struct sockaddr *)&servidor_addr, sizeof(servidor_addr)) < 0)
     {
         perror("Bind");
@@ -173,8 +174,13 @@ int main(int argc, char *argv[])
                 }
                 else // Si no es el socket del servidor, es un cliente enviando datos
                 {
-                    char buffer[BUFFER_SIZE];
-                    int bytes_recibidos = recv(i, buffer, sizeof(buffer) - 1, 0); // Recibe datos del cliente
+                    char buffer[TAM_PAQUETE];
+                    size_t len = strlen(buffer);
+                    if (len > 0 && buffer[len - 1] == '\n')
+                        buffer[len - 1] = '\0';
+                    if (len > 0 && buffer[len - 1] == '\r')
+                        buffer[len - 1] = '\0';
+                    int bytes_recibidos = recv(i, buffer, TAM_PAQUETE, 0); // Recibe datos del cliente
                     if (bytes_recibidos <= 0)                                     // Si se desconecto o hubo error
                     {
                         for (int j = 0; j < numero_clientes; j++)
@@ -193,6 +199,7 @@ int main(int argc, char *argv[])
                         buffer[bytes_recibidos] = '\0'; // Agrega /0
                         printf("Comando recibido de socket %d: %s\n", i, buffer);
                         printf("Bytes recibidos: %d\n", bytes_recibidos);
+                        printf("Comando recibido de socket %d: [%s]\n", i, buffer);
 
                         if (strncmp(buffer, "/nombre ", 8) == 0)
                         {
@@ -238,7 +245,7 @@ int main(int argc, char *argv[])
                                 }
                             }
                         }
-                        
+
                         else if (strncmp(buffer, "/c ", 3) == 0)
                         {
                             char nombre_destino[MAX_TAM_NOMBRE_USUARIO];
@@ -262,9 +269,9 @@ int main(int argc, char *argv[])
                                     if (j != idx_emisor)
                                     {
                                         char msg[BUFFER_SIZE];
-                                        snprintf(msg, sizeof(msg), "/conectar %s %d\n",
+                                        snprintf(msg, sizeof(msg), "/conectar %s %d %s\n",
                                                  inet_ntoa(clientes[j].addr.sin_addr),
-                                                 clientes[j].puerto_escucha);
+                                                 clientes[j].puerto_escucha, clientes[j].nombre_usuario);
                                         send(clientes[idx_emisor].socket, msg, strlen(msg), 0);
                                     }
                                 }
@@ -286,9 +293,9 @@ int main(int argc, char *argv[])
                                 if (idx_receptor != -1 && idx_emisor != -1)
                                 {
                                     char msg[BUFFER_SIZE];
-                                    snprintf(msg, sizeof(msg), "/conectar %s %d\n",
+                                    snprintf(msg, sizeof(msg), "/conectar %s %d %s\n",
                                              inet_ntoa(clientes[idx_receptor].addr.sin_addr),
-                                             clientes[idx_receptor].puerto_escucha);
+                                             clientes[idx_receptor].puerto_escucha, clientes[idx_receptor].nombre_usuario);
                                     send(clientes[idx_emisor].socket, msg, strlen(msg), 0);
 
                                     printf("Le dije a %s que se conecte con %s\n",

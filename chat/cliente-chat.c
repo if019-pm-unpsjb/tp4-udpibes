@@ -164,6 +164,8 @@ void *escuchar_chat(void *arg)
     while (1)
     {
         int bytes = recv(conexion->socket, buffer, TAM_PAQUETE, 0); // Espera mensajes del otro cliente
+        buffer[bytes] = '\0';                                       // <- Muy importante para evitar basura y residuos
+        printf("\33[2K\rRecibidos %d bytes: \n", bytes);      
         if (bytes <= 0)
         {
             printf("\33[2K\rSe cerro la conexion de chat con %s.\n> ",
@@ -269,8 +271,8 @@ void iniciar_conexion_entrante(int escucha_socket)
 
             // snprintf(mensaje, sizeof(mensaje), "/nombre %s\n", nombre_auxiliar);
         }
-        printf("\33[2K\rCliente se conecto para chatear: %s:%d\n> ",
-               inet_ntoa(cliente_addr.sin_addr), ntohs(cliente_addr.sin_port));
+        printf("\33[2K\rCliente se conecto para chatear: %s\n> ",
+               nombre_auxiliar);
         fflush(stdout);
 
         // Crea una nueva estructura para manejar la conexion
@@ -300,7 +302,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     int sock = socket(AF_INET, SOCK_STREAM, 0); // Crea socket TCP
     struct sockaddr_in destino;
     memset(&destino, 0, sizeof(destino));
-    printf("\33[2K\rIntentando conectar a %s:%d...\n\n> ", ip, puerto);
+    printf("\33[2K\rIntentando conectar a %s...\n\n> ", nombre_receptor);
     fflush(stdout);
 
     destino.sin_family = AF_INET;
@@ -317,7 +319,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     snprintf(nombre, sizeof(nombre), "/nombre %s\n", nombre_personal);
     send(sock, nombre, TAM_PAQUETE_NOMBRE, 0);
 
-    printf("\33[2K\rConectado a %s:%d\n> ", ip, puerto);
+    printf("\33[2K\rConectado a %s\n> ", nombre_receptor);
     fflush(stdout);
 
     // Asigna la nueva conexion como activa
@@ -350,7 +352,6 @@ void enviar_mensaje_o_archivo(char linea[BUFFER_SIZE], ConexionChat conexion)
     }
     else
     {
-        // enviar_con_prefijo(servidor_socket, linea);
         send(conexion.socket, linea, TAM_PAQUETE, 0);
     }
 }
@@ -360,6 +361,21 @@ bool existe_conexion(char nombre[MAX_TAM_NOMBRE_USUARIO])
     for (int i = 0; i < cantidad_usuarios_conectados; i++)
     {
         if (strcmp(usuarios_conectado[i].nombre, nombre) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+bool existe_conexion_ip_puerto(const char *ip, int puerto)
+{
+    for (int i = 0; i < cantidad_usuarios_conectados; i++)
+    {
+        char ip_existente[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(usuarios_conectado[i].addr.sin_addr), ip_existente, INET_ADDRSTRLEN);
+
+        int puerto_existente = ntohs(usuarios_conectado[i].addr.sin_port);
+        if (strcmp(ip, ip_existente) == 0 && puerto == puerto_existente)
         {
             return true;
         }
@@ -423,7 +439,7 @@ int main(int argc, char *argv[])
         if (bytes > 0)
         {
             buffer[bytes] = '\0'; // Aseguramos que sea una cadena válida
-            // printf("DEBUG: recibido [%s]\n", buffer);
+            printf("DEBUG: recibido [%s]\n", buffer);
 
             if (strncmp(buffer, "/error", 6) == 0)
             {
@@ -496,42 +512,30 @@ int main(int argc, char *argv[])
             char linea[BUFFER_SIZE];
             fgets(linea, sizeof(linea), stdin); // Lee comando o mensaje del usuario
 
-            // esto habria que ponerlo en lugar de todos los printf, es un bardo porque encima la variable difusion deberia ser global
-            /*             if (difusion)
-                        {
-                            printf("\33[2K\r\n[MENSAJE PARA TODOS]> ");
-                        }
-                        else if (conexion_chat_actual != NULL)
-                        {
-                            printf("\33[2K\r\n[MENSAJE PARA %s]> ", conexion_chat_actual->nombre);
-                        }
-                        else
-                        {
-                            printf("\33[2K\r\n> ");
-                        } */
-            printf("\33[2K\r\n> ");
-            fflush(stdout);
             size_t len = strlen(linea);
             if (len > 0 && linea[len - 1] == '\n')
             {
                 linea[len - 1] = '\0';
             }
+            printf("\33[2K\r\n> ");
+            fflush(stdout);
             if ((strcmp(linea, "/c @all") == 0) || (strcmp(linea, "/c all") == 0))
             {
                 difusion = true;
             }
             else if (strcmp(linea, "/c @allall") == 0)
             {
-                //VER EL TEMA DE QUE LOS RECEPTORES NO MUESTRA SU NOMBRE. TRATE DE HACER QUE LE PREGUNTARA A LOS CLIENTES EL NOMBRE Y QUE RESPONDIERAN CON EL MISMO (SIN METER AL SERVER), PERO NO FUNCIONO Y ME PARECE UN BARDO
+                // VER EL TEMA DE QUE LOS RECEPTORES NO MUESTRA SU NOMBRE. TRATE DE HACER QUE LE PREGUNTARA A LOS CLIENTES EL NOMBRE Y QUE RESPONDIERAN CON EL MISMO (SIN METER AL SERVER), PERO NO FUNCIONO Y ME PARECE UN BARDO
                 difusion = true;
                 ultimo_nombre_receptor[0] = '\0'; // array vacio porque no hay un unico receptor
                 send(servidor_socket, linea, strlen(linea), 0);
             }
             else if (strncmp(linea, "/c ", 3) == 0)
             {
-                char mensaje[64];
+                char mensaje[TAM_PAQUETE];
                 difusion = false;
 
+                sscanf(linea + 3, "%31s", ultimo_nombre_receptor); // guarda el nombre ingresado
                 if (existe_conexion(ultimo_nombre_receptor))
                 {
                     conexion_si_existe(ultimo_nombre_receptor);
@@ -541,7 +545,6 @@ int main(int argc, char *argv[])
                     snprintf(mensaje, sizeof(mensaje), "/c %s\n", ultimo_nombre_receptor);
                     send(servidor_socket, mensaje, strlen(mensaje), 0);
                 }
-                sscanf(linea + 3, "%31s", ultimo_nombre_receptor); // guarda el nombre ingresado
             }
             else if (strcmp(linea, "/info") == 0)
             {
@@ -611,9 +614,15 @@ int main(int argc, char *argv[])
             {
                 // Si el servidor pide que conecte a un cliente
                 char ip[INET_ADDRSTRLEN];
+                char nombre[MAX_TAM_NOMBRE_USUARIO];
                 int puerto;
-                sscanf(buffer + 10, "%s %d", ip, &puerto);
-                iniciar_conexion_salida(ip, puerto, ultimo_nombre_receptor);
+                // sscanf(buffer + 10, "%s %d %s", ip, &puerto, nombre);
+                sscanf(buffer + 10, "%15s %d %31s", ip, &puerto, nombre);
+
+                if (!existe_conexion_ip_puerto(ip, puerto))
+                {
+                    iniciar_conexion_salida(ip, puerto, nombre);
+                }
             }
             else
             {
