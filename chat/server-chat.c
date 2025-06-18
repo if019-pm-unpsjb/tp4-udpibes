@@ -114,12 +114,12 @@ int main(int argc, char *argv[])
     servidor_addr.sin_family = AF_INET;
     servidor_addr.sin_port = htons(puerto);     // Asigna el puerto que se paso com o parametro
     servidor_addr.sin_addr.s_addr = INADDR_ANY; // Acepta conexiones de cualquier ip
-/* 
+
     int opt = 1;
-    if (setsockopt(servidor_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt) < 0)) {
+    if (setsockopt(servidor_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         perror("setsocketopt");
         exit(EXIT_FAILURE);
-    } */
+    } 
     if (bind(servidor_socket, (struct sockaddr *)&servidor_addr, sizeof(servidor_addr)) < 0)
     {
         perror("Bind");
@@ -238,6 +238,7 @@ int main(int argc, char *argv[])
                                 }
                             }
                         }
+                        
                         else if (strncmp(buffer, "/c ", 3) == 0)
                         {
                             char nombre_destino[MAX_TAM_NOMBRE_USUARIO];
@@ -253,7 +254,7 @@ int main(int argc, char *argv[])
                                 }
                             }
 
-                            if (strcmp(nombre_destino, "all") == 0)
+                            if (strcmp(nombre_destino, "@allall") == 0)
                             {
                                 // Modo difusión
                                 for (int j = 0; j < numero_clientes; j++)
