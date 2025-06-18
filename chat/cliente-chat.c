@@ -515,7 +515,7 @@ int main(int argc, char *argv[])
             {
                 linea[len - 1] = '\0';
             }
-            if (strcmp(linea, "/c @all") == 0)
+            if ((strcmp(linea, "/c @all") == 0) || (strcmp(linea, "/c all") == 0))
             {
                 difusion = true;
             }
@@ -524,7 +524,6 @@ int main(int argc, char *argv[])
                 char mensaje[64];
                 difusion = false;
 
-                sscanf(linea + 3, "%31s", ultimo_nombre_receptor); // guarda el nombre ingresado
                 if (existe_conexion(ultimo_nombre_receptor))
                 {
                     conexion_si_existe(ultimo_nombre_receptor);
@@ -534,6 +533,7 @@ int main(int argc, char *argv[])
                     snprintf(mensaje, sizeof(mensaje), "/c %s\n", ultimo_nombre_receptor);
                     send(servidor_socket, mensaje, strlen(mensaje), 0);
                 }
+                sscanf(linea + 3, "%31s", ultimo_nombre_receptor); // guarda el nombre ingresado
             }
             else if (strcmp(linea, "/info") == 0)
             {
@@ -542,13 +542,13 @@ int main(int argc, char *argv[])
             else if (strcmp(linea, "/actual") == 0)
             {
                 pthread_mutex_lock(&chat_mutex);
-                if (conexion_chat_actual != NULL)
-                {
-                    printf("\33[2K\rEstas chateando con: %s\n> ", conexion_chat_actual->nombre);
-                }
-                else if (difusion)
+                if (difusion)
                 {
                     printf("\33[2K\rEstas en modo difusion (@all)\n> ");
+                }
+                else if (conexion_chat_actual != NULL)
+                {
+                    printf("\33[2K\rEstas chateando con: %s\n> ", conexion_chat_actual->nombre);
                 }
                 else
                 {
