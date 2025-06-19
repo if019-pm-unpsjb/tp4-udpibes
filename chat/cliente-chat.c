@@ -165,7 +165,8 @@ void *escuchar_chat(void *arg)
     {
         int bytes = recv(conexion->socket, buffer, TAM_PAQUETE, 0); // Espera mensajes del otro cliente
         buffer[bytes] = '\0';                                       // <- Muy importante para evitar basura y residuos
-        printf("\33[2K\rRecibidos %d bytes: \n", bytes);      
+        printf("\33[2K\rRecibidos %d bytes: \n", bytes);
+
         if (bytes <= 0)
         {
             printf("\33[2K\rSe cerro la conexion de chat con %s.\n> ",
@@ -189,12 +190,14 @@ void *escuchar_chat(void *arg)
 
             pthread_exit(NULL); // Finaliza el hilo
         }
+      
         if (strncmp(buffer, "/archivo ", 9) == 0)
         {
             recibir_archivo(conexion->socket);
         }
         else
         {
+
             printf("\33[2K\r[%s]: %s\n> ", conexion->nombre, buffer);
             fflush(stdout);
         }
@@ -432,14 +435,14 @@ int main(int argc, char *argv[])
 
         char mensaje_nombre[MAX_TAM_PAQUETE_NOMBRE_USUARIO];
         snprintf(mensaje_nombre, sizeof(mensaje_nombre), "/nombre %s\n", nombre_personal);
-        send(servidor_socket, mensaje_nombre, strlen(mensaje_nombre), 0);
+        send(servidor_socket, mensaje_nombre, MAX_TAM_PAQUETE_NOMBRE_USUARIO, 0);
 
         char buffer[BUFFER_SIZE];
         int bytes = recv(servidor_socket, buffer, sizeof(buffer) - 1, 0);
         if (bytes > 0)
         {
             buffer[bytes] = '\0'; // Aseguramos que sea una cadena válida
-            printf("DEBUG: recibido [%s]\n", buffer);
+            // printf("DEBUG: recibido [%s]\n", buffer);
 
             if (strncmp(buffer, "/error", 6) == 0)
             {
