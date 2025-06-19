@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include "constantes.h"
 #include <asm-generic/socket.h>
+#include "./imprimir/imprimir_mensaje.h"
 
 typedef struct
 {
@@ -101,7 +102,7 @@ void enviar_archivo(int socket, const char *nombre_archivo)
     }
 
     fclose(archivo);
-    printf("Archivo '%s' enviado con éxito.\n", nombre_archivo);
+    imprimirMensaje("Archivo '%s' enviado con éxito.", 1, nombre_archivo);
 }
 void recibir_archivo(int socket)
 {
@@ -120,7 +121,7 @@ void recibir_archivo(int socket)
         return;
     }
 
-    printf("Recibiendo archivo '%s' de %d bytes, enviado por %s\n", info.nombre_archivo, info.tamano_archivo, conexion_chat_actual->nombre);
+    imprimirMensaje("Recibiendo archivo '%s' de %d bytes, enviado por %s", 1, info.nombre_archivo, info.tamano_archivo, conexion_chat_actual->nombre);
     char nombre_archivo[MAX_TAM_NOMBRE_ARCHIVO + MAX_TAM_NOMBRE_USUARIO];
     snprintf(nombre_archivo, sizeof(nombre_archivo), "%s_%s", conexion_chat_actual->nombre, info.nombre_archivo);
 
@@ -152,7 +153,7 @@ void recibir_archivo(int socket)
     }
 
     fclose(archivo);
-    printf("Archivo '%s' recibido correctamente.\n", info.nombre_archivo);
+    imprimirMensaje("Archivo '%s' recibido correctamente.", 1, info.nombre_archivo);
 }
 
 // Hilo que escucha mensajes entrantes en un chat activo
@@ -165,12 +166,10 @@ void *escuchar_chat(void *arg)
     {
         int bytes = recv(conexion->socket, buffer, TAM_PAQUETE, 0); // Espera mensajes del otro cliente
         buffer[bytes] = '\0';                                       // <- Muy importante para evitar basura y residuos
-        printf("\33[2K\rRecibidos %d bytes: \n", bytes);      
+        imprimirMensaje("Recibidos %d bytes: ", 1, bytes);
         if (bytes <= 0)
         {
-            printf("\33[2K\rSe cerro la conexion de chat con %s.\n> ",
-                   conexion->nombre);
-            fflush(stdout);
+            imprimirMensaje("Se cerro la conexion de chat con %s. ", 1, conexion->nombre);
             eliminar_conexion_por_socket(usuarios_conectado, conexion->socket);
 
             // Reducís el contador total
@@ -195,8 +194,7 @@ void *escuchar_chat(void *arg)
         }
         else
         {
-            printf("\33[2K\r[%s]: %s\n> ", conexion->nombre, buffer);
-            fflush(stdout);
+            imprimirMensaje("[%s]: %s ", 1, conexion->nombre, buffer);
         }
         // buffer[0] = '\0';
         bzero(buffer, sizeof(buffer));
@@ -271,9 +269,7 @@ void iniciar_conexion_entrante(int escucha_socket)
 
             // snprintf(mensaje, sizeof(mensaje), "/nombre %s\n", nombre_auxiliar);
         }
-        printf("\33[2K\rCliente se conecto para chatear: %s\n> ",
-               nombre_auxiliar);
-        fflush(stdout);
+        imprimirMensaje("Cliente se conecto para chatear: %s ", 1, nombre_auxiliar);
 
         // Crea una nueva estructura para manejar la conexion
         ConexionChat *conexion = malloc(sizeof(ConexionChat));
@@ -302,8 +298,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     int sock = socket(AF_INET, SOCK_STREAM, 0); // Crea socket TCP
     struct sockaddr_in destino;
     memset(&destino, 0, sizeof(destino));
-    printf("\33[2K\rIntentando conectar a %s...\n\n> ", nombre_receptor);
-    fflush(stdout);
+    imprimirMensaje("Intentando conectar a %s...\n ", 1, nombre_receptor);
 
     destino.sin_family = AF_INET;
     destino.sin_port = htons(puerto);
@@ -319,8 +314,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     snprintf(nombre, sizeof(nombre), "/nombre %s\n", nombre_personal);
     send(sock, nombre, TAM_PAQUETE_NOMBRE, 0);
 
-    printf("\33[2K\rConectado a %s\n> ", nombre_receptor);
-    fflush(stdout);
+    imprimirMensaje("Conectado a %s ", 1, nombre_receptor);
 
     // Asigna la nueva conexion como activa
     ConexionChat *conexion = malloc(sizeof(ConexionChat));
@@ -400,7 +394,7 @@ int main(int argc, char *argv[])
 {
     if (argc != 4)
     {
-        printf("Uso: %s <ip_server> <puerto_server> <puerto_escucha>\n", argv[0]);
+        imprimirMensaje("Uso: %s <ip_server> <puerto_server> <puerto_escucha>", 1, argv[0]);
         return 1;
     }
 
@@ -425,8 +419,7 @@ int main(int argc, char *argv[])
     int disponible = 0;
     while (!disponible)
     {
-        printf("\33[2K\rIngrese el nombre con el que lo reconocerán otros usuarios: \n\n> ");
-        fflush(stdout);
+        imprimirMensaje("Ingrese el nombre con el que lo reconocerán otros usuarios: \n ", 1);
 
         scanf("%31s", nombre_personal); // Leemos hasta 99 caracteres (dejamos 1 para el '\0')
 
@@ -439,24 +432,20 @@ int main(int argc, char *argv[])
         if (bytes > 0)
         {
             buffer[bytes] = '\0'; // Aseguramos que sea una cadena válida
-            printf("DEBUG: recibido [%s]\n", buffer);
 
             if (strncmp(buffer, "/error", 6) == 0)
             {
-                printf("\33[2K\r\nNombre rechazado, por favor ingrese otro nombre\n\n> "); // Muestra el mensaje de error
-                fflush(stdout);
+                imprimirMensaje("\nNombre rechazado, por favor ingrese otro nombre\n ", 1); // Muestra el mensaje de error
             }
             else if (strncmp(buffer, "/ok", 3) == 0)
             {
-                printf("\33[2K\r\nNombre aceptado.\n> ");
-                fflush(stdout);
+                imprimirMensaje("Nombre aceptado. ", 1);
 
                 disponible = 1; // Salís del bucle
             }
             else
             {
-                printf("\33[2K\r\nRespuesta desconocida del servidor: %s\n> ", buffer);
-                fflush(stdout);
+                imprimirMensaje("Respuesta desconocida del servidor: %s ", 1, buffer);
             }
         }
         else
@@ -466,14 +455,15 @@ int main(int argc, char *argv[])
         }
     }
 
-    printf("\33[2K\r\nComandos posibles:\n\
+    imprimirMensaje("\nComandos posibles:\n\
 >/info -> lista todos los usuarios disponibles\n\
 >/c nombre_usuario -> establece una conexion con el usuario que tenga ese nombre\n\
 >/c @all -> envia mensaje a todos los usuarios con los que se ha conectado previamente\n\
 >/c @allall -> envia mensaje a todos los usuarios conectados en el servidor\n\
 >/actual -> informa con quien estas chateando\n\
 >/archivo nombre_archivo -> envia archivo al usuario con el que esta conectado\n\
-> ");
+ ",
+                    1);
 
     // Envia al servidor el puerto en el que este cliente estara escuchando
     char mensaje[64];
@@ -483,8 +473,7 @@ int main(int argc, char *argv[])
     // Crea el socket de escucha para otros clientes
     int escucha_socket = crear_socket_escucha(puerto_escucha);
 
-    printf("\33[2K\rCliente iniciado. Esperando conexiones en puerto %d...\n\n> ", puerto_escucha);
-    fflush(stdout);
+    imprimirMensaje("Cliente iniciado. Esperando conexiones en puerto %d...\n ", 1, puerto_escucha);
 
     // Prepara para monitorear multiples entradas con select()
     fd_set read_fds;
@@ -517,8 +506,6 @@ int main(int argc, char *argv[])
             {
                 linea[len - 1] = '\0';
             }
-            printf("\33[2K\r\n> ");
-            fflush(stdout);
             if ((strcmp(linea, "/c @all") == 0) || (strcmp(linea, "/c all") == 0))
             {
                 difusion = true;
@@ -555,21 +542,34 @@ int main(int argc, char *argv[])
                 pthread_mutex_lock(&chat_mutex);
                 if (difusion)
                 {
-                    printf("\33[2K\rEstas en modo difusion (@all)\n> ");
+                    imprimirMensaje("Estas en modo difusion (@all) ", 1);
                 }
                 else if (conexion_chat_actual != NULL)
                 {
-                    printf("\33[2K\rEstas chateando con: %s\n> ", conexion_chat_actual->nombre);
+                    imprimirMensaje("Estas chateando con: %s ", 1, conexion_chat_actual->nombre);
                 }
                 else
                 {
-                    printf("\33[2K\rNo hay chat activo\n\n> ");
+                    imprimirMensaje("No hay chat activo\n ", 1);
                 }
-                fflush(stdout);
                 pthread_mutex_unlock(&chat_mutex);
             }
             else
             {
+
+                // FILTRO DE MENSAJES VACÍOS
+                char *p = linea;
+                while (*p == ' ')
+                    p++;
+                if (*p == '\0')
+                {
+                    // Si es vacío, sólo mostrá el prompt y salí
+                    imprimirMensaje("", 1);
+                    linea[0] = '\0';
+                    pthread_mutex_unlock(&chat_mutex); // <-- soltar el mutex si ya lo tomaste
+                    continue;                          // vuelve a pedir input
+                }
+
                 pthread_mutex_lock(&chat_mutex);
 
                 if (conexion_chat_actual != NULL) // Si hay una conexion de chat activa, envia alli
@@ -594,6 +594,7 @@ int main(int argc, char *argv[])
                 pthread_mutex_unlock(&chat_mutex);
             }
             linea[0] = '\0';
+            imprimirMensaje("", 1);
         }
 
         // Respuesta del servidor
@@ -603,8 +604,7 @@ int main(int argc, char *argv[])
             int bytes = recv(servidor_socket, buffer, sizeof(buffer) - 1, 0);
             if (bytes <= 0)
             {
-                printf("\33[2K\rDesconectado del servidor.\n> ");
-                fflush(stdout);
+                imprimirMensaje("Desconectado del servidor. ", 1);
 
                 break;
             }
@@ -627,8 +627,7 @@ int main(int argc, char *argv[])
             else
             {
                 // Mensaje comun del servidor
-                printf("\33[2K\r[Servidor] %s\n> ", buffer);
-                fflush(stdout);
+                imprimirMensaje("[Servidor] %s ", 1, buffer);
             }
         }
 
