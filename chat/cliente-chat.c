@@ -166,7 +166,6 @@ void *escuchar_chat(void *arg)
     {
         int bytes = recv(conexion->socket, buffer, TAM_PAQUETE, 0); // Espera mensajes del otro cliente
         buffer[bytes] = '\0';                                       // <- Muy importante para evitar basura y residuos
-        imprimirMensaje("Recibidos %d bytes: ", 1, bytes);
         if (bytes <= 0)
         {
             imprimirMensaje("Se cerro la conexion de chat con %s. ", 1, conexion->nombre);
