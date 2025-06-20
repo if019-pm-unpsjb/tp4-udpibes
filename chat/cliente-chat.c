@@ -168,7 +168,7 @@ void *escuchar_chat(void *arg)
         buffer[bytes] = '\0';                                       // <- Muy importante para evitar basura y residuos
         if (bytes <= 0)
         {
-            imprimirMensaje("Se cerro la conexion de chat con %s. ", 1, conexion->nombre);
+            imprimirMensaje("\nSe cerro la conexion de chat con %s.\n ", 1, conexion->nombre);
             eliminar_conexion_por_socket(usuarios_conectado, conexion->socket);
 
             // Reducís el contador total
@@ -269,7 +269,7 @@ void iniciar_conexion_entrante(int escucha_socket)
 
             // snprintf(mensaje, sizeof(mensaje), "/nombre %s\n", nombre_auxiliar);
         }
-        imprimirMensaje("Cliente se conecto para chatear: %s ", 1, nombre_auxiliar);
+        imprimirMensaje("Cliente se conecto para chatear: %s\n ", 1, nombre_auxiliar);
 
         // Crea una nueva estructura para manejar la conexion
         ConexionChat *conexion = malloc(sizeof(ConexionChat));
@@ -298,7 +298,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     int sock = socket(AF_INET, SOCK_STREAM, 0); // Crea socket TCP
     struct sockaddr_in destino;
     memset(&destino, 0, sizeof(destino));
-    imprimirMensaje("Intentando conectar a %s...\n ", 1, nombre_receptor);
+    imprimirMensaje("\nIntentando conectar a %s...\n ", 1, nombre_receptor);
 
     destino.sin_family = AF_INET;
     destino.sin_port = htons(puerto);
@@ -314,7 +314,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     snprintf(nombre, sizeof(nombre), "/nombre %s\n", nombre_personal);
     send(sock, nombre, TAM_PAQUETE_NOMBRE, 0);
 
-    imprimirMensaje("Conectado a %s ", 1, nombre_receptor);
+    imprimirMensaje("Conectado a %s\n ", 1, nombre_receptor);
 
     // Asigna la nueva conexion como activa
     ConexionChat *conexion = malloc(sizeof(ConexionChat));
@@ -419,7 +419,7 @@ int main(int argc, char *argv[])
     int disponible = 0;
     while (!disponible)
     {
-        imprimirMensaje("Ingrese el nombre con el que lo reconocerán otros usuarios: \n ", 1);
+        imprimirMensaje("\nIngrese el nombre con el que lo reconocerán otros usuarios: \n ", 1);
 
         scanf("%31s", nombre_personal); // Leemos hasta 99 caracteres (dejamos 1 para el '\0')
 
@@ -440,7 +440,7 @@ int main(int argc, char *argv[])
             }
             else if (strncmp(buffer, "/ok", 3) == 0)
             {
-                imprimirMensaje("Nombre aceptado. ", 1);
+                imprimirMensaje("\nNombre aceptado. ", 1);
 
                 disponible = 1; // Salís del bucle
             }
@@ -543,15 +543,15 @@ int main(int argc, char *argv[])
                 pthread_mutex_lock(&chat_mutex);
                 if (difusion)
                 {
-                    imprimirMensaje("Estas en modo difusion (@all) ", 1);
+                    imprimirMensaje("\nEstas en modo difusion (@all)\n ", 1);
                 }
                 else if (conexion_chat_actual != NULL)
                 {
-                    imprimirMensaje("Estas chateando con: %s ", 1, conexion_chat_actual->nombre);
+                    imprimirMensaje("\nEstas chateando con: %s\n ", 1, conexion_chat_actual->nombre);
                 }
                 else
                 {
-                    imprimirMensaje("No hay chat activo\n ", 1);
+                    imprimirMensaje("\nNo hay chat activo\n ", 1);
                 }
                 pthread_mutex_unlock(&chat_mutex);
             }
@@ -628,7 +628,7 @@ int main(int argc, char *argv[])
             else
             {
                 // Mensaje comun del servidor
-                imprimirMensaje("[Servidor] %s ", 1, buffer);
+                imprimirMensaje("\n[Servidor] %s ", 1, buffer);
             }
         }
 

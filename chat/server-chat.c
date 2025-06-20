@@ -34,6 +34,9 @@ void enviar_lista_usuarios(int cliente_socket)
         if (clientes[i].socket == cliente_socket)
             continue; // Saltear al usuario que hizo la solicitud
 
+        if (clientes[i].nombre_usuario[0] == '\0')
+            continue; // Saltear al usuario con nombre vacío
+
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(clientes[i].addr.sin_addr), ip, INET_ADDRSTRLEN);
         int puerto = clientes[i].puerto_escucha;
@@ -181,7 +184,7 @@ int main(int argc, char *argv[])
                     if (len > 0 && buffer[len - 1] == '\r')
                         buffer[len - 1] = '\0';
                     int bytes_recibidos = recv(i, buffer, TAM_PAQUETE, 0); // Recibe datos del cliente
-                    if (bytes_recibidos <= 0)                                     // Si se desconecto o hubo error
+                    if (bytes_recibidos <= 0)                              // Si se desconecto o hubo error
                     {
                         for (int j = 0; j < numero_clientes; j++)
                         {
