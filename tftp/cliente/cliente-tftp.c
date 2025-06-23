@@ -208,7 +208,7 @@ int main(int argc, char *argv[])
                 }
 
                 // Si llegamos aquí, hay datos disponibles para leer
-                ssize_t bytes_recibidos = recvfrom(sock, buffer, sizeof(buffer), 0,
+                /* ssize_t bytes_recibidos = recvfrom(sock, buffer, sizeof(buffer), 0,
                                                    (struct sockaddr *)&servidor, &servidor_len);
 
                 if (bytes_recibidos < 0)
@@ -217,7 +217,7 @@ int main(int argc, char *argv[])
                     close(sock);
                     exit(EXIT_FAILURE);
                 }
-
+ */
                 // seguir con el flujo normal: procesar DATA o ERROR
                 break;
             }
@@ -277,12 +277,6 @@ int main(int argc, char *argv[])
             }
 
             if (bloque == bloque_esperado)
-            {
-                fwrite(datos, 1, datos_len, archivo_destino);
-                bloque_esperado++;
-                reintentos_mismo_bloque = 0;
-            }
-            else if (bloque == bloque_esperado)
             {
                 fwrite(datos, 1, datos_len, archivo_destino);
                 bloque_esperado++;

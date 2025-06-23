@@ -71,29 +71,35 @@ void enviar_archivo(int socket, const char *nombre_archivo)
         return;
     }
 
-    // Obtener tamaño del archivo
     fseek(archivo, 0, SEEK_END);
     int tam_archivo = ftell(archivo);
     rewind(archivo);
 
-    // Armar estructura
     Datos_archivo info;
-    strncpy(info.nombre_archivo, nombre_archivo, MAX_TAM_NOMBRE_ARCHIVO);
-    info.nombre_archivo[MAX_TAM_NOMBRE_ARCHIVO - 1] = '\0'; // Asegura terminación
+    memset(&info, 0, sizeof(info));
+    strncpy(info.nombre_archivo, nombre_archivo, MAX_TAM_NOMBRE_ARCHIVO - 1);
     info.tamano_archivo = tam_archivo;
 
-    // Enviar estructura al cliente
-    if (send(socket, &info, TAM_PAQUETE, 0) < 0)
+    // 🧠 Enviar estructura con paquete fijo
+    char paquete[TAM_PAQUETE];
+    memset(paquete, 0, TAM_PAQUETE);               // Limpiar buffer
+    memcpy(paquete, &info, sizeof(info));          // Copiar estructura
+    if (send(socket, paquete, TAM_PAQUETE, 0) < 0) // Enviar paquete completo
     {
         perror("Error al enviar metadatos del archivo");
         fclose(archivo);
         return;
     }
-    // Enviar el contenido en bloques
+
+    // Enviar el contenido del archivo
     char buffer[TAM_PAQUETE];
     size_t leidos;
     while ((leidos = fread(buffer, 1, TAM_PAQUETE, archivo)) > 0)
     {
+        // Si leí menos que TAM_PAQUETE, rellenar con ceros
+        if (leidos < TAM_PAQUETE)
+            memset(buffer + leidos, 0, TAM_PAQUETE - leidos);
+
         if (send(socket, buffer, TAM_PAQUETE, 0) < 0)
         {
             perror("Error al enviar datos del archivo");
@@ -104,6 +110,7 @@ void enviar_archivo(int socket, const char *nombre_archivo)
     fclose(archivo);
     imprimirMensaje("Archivo '%s' enviado con éxito.", 1, nombre_archivo);
 }
+
 void recibir_archivo(int socket)
 {
     if (socket < 0)
@@ -112,20 +119,31 @@ void recibir_archivo(int socket)
         return;
     }
 
-    // Recibir los metadatos
-    Datos_archivo info;
-    int recibidos = recv(socket, &info, TAM_PAQUETE, 0);
-    if (recibidos <= 0)
+    // 1. Recibir paquete fijo
+    char paquete[TAM_PAQUETE];
+    int total = 0;
+    while (total < TAM_PAQUETE)
     {
-        perror("Error al recibir metadatos del archivo");
-        return;
+        int recibidos = recv(socket, paquete + total, TAM_PAQUETE - total, 0);
+        if (recibidos <= 0)
+        {
+            perror("Error al recibir metadatos del archivo");
+            return;
+        }
+        total += recibidos;
     }
 
-    imprimirMensaje("Recibiendo archivo '%s' de %d bytes, enviado por %s", 1, info.nombre_archivo, info.tamano_archivo, conexion_chat_actual->nombre);
+    // 2. Copiar los primeros bytes al struct Datos_archivo
+    Datos_archivo info;
+    memcpy(&info, paquete, sizeof(info));  // ✅
+
+    imprimirMensaje("Recibiendo archivo '%s' de %d bytes, enviado por %s",
+                    1, info.nombre_archivo, info.tamano_archivo, conexion_chat_actual->nombre);
+
+    // 3. Crear nombre de archivo destino
     char nombre_archivo[MAX_TAM_NOMBRE_ARCHIVO + MAX_TAM_NOMBRE_USUARIO];
     snprintf(nombre_archivo, sizeof(nombre_archivo), "%s_%s", conexion_chat_actual->nombre, info.nombre_archivo);
 
-    // Abrir archivo con el nombre original
     FILE *archivo = fopen(nombre_archivo, "wb");
     if (!archivo)
     {
@@ -133,14 +151,12 @@ void recibir_archivo(int socket)
         return;
     }
 
-    // Recibir el archivo en bloques
+    // 4. Recibir el contenido del archivo
     char buffer[TAM_PAQUETE];
     int total_recibido = 0;
+
     while (total_recibido < info.tamano_archivo)
     {
-        // int restante = info.tamano_archivo - total_recibido;
-        // int a_recibir = (restante < TAM_PAQUETE) ? restante : TAM_PAQUETE;
-
         int bytes = recv(socket, buffer, TAM_PAQUETE, 0);
         if (bytes <= 0)
         {
@@ -148,13 +164,17 @@ void recibir_archivo(int socket)
             break;
         }
 
-        fwrite(buffer, 1, bytes, archivo);
-        total_recibido += bytes;
+        int restante = info.tamano_archivo - total_recibido;
+        int a_escribir = (bytes > restante) ? restante : bytes;
+
+        fwrite(buffer, 1, a_escribir, archivo);
+        total_recibido += a_escribir;
     }
 
     fclose(archivo);
     imprimirMensaje("Archivo '%s' recibido correctamente.", 1, info.nombre_archivo);
 }
+
 
 // Hilo que escucha mensajes entrantes en un chat activo
 void *escuchar_chat(void *arg)
@@ -187,7 +207,7 @@ void *escuchar_chat(void *arg)
 
             pthread_exit(NULL); // Finaliza el hilo
         }
-      
+
         if (strncmp(buffer, "/archivo ", 9) == 0)
         {
             recibir_archivo(conexion->socket);
