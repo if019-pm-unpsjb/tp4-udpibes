@@ -16,7 +16,7 @@ void enviarMensajeError(int socket_udp, struct sockaddr_in direccion_cliente, in
 
     char paquete_error[TAM_MAX_POSIBLE];
     uint16_t opcode_error = htons(ERROR);
-    uint16_t codigo_error_htons = htons(codigo_err); 
+    uint16_t codigo_error_htons = htons(codigo_err);
     size_t longitud_mensaje = strlen(mensaje_error);
     size_t tamanio_msg = 4 + longitud_mensaje + 1;
 
@@ -173,7 +173,6 @@ bool recibirArchivo(const char *descripcion, int socket_udp, struct sockaddr_in 
 
     socklen_t tam = sizeof(direccion_cliente);
     uint16_t bloque_esperado = 1;
-    int contador = 900000;
     struct timeval tv;
     tv.tv_sec = TIMEOUT_SEGUNDOS; // 1 segundo
     tv.tv_usec = 0;               // 0 microsegundos
@@ -260,36 +259,34 @@ bool recibirArchivo(const char *descripcion, int socket_udp, struct sockaddr_in 
         *(uint16_t *)&ack[0] = htons(ACK);
         *(uint16_t *)&ack[2] = htons(bloque);
 
-        usleep(contador); // 400000 microsegundos = 0.4 segundos
-        contador = contador + 900000;
-
-    enviarack:
-        if (sendto(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&direccion_cliente, tam) < 0)
+        int ack_enviado = 0;
+        for (int i = 0; i < 3; i++)
         {
-            if (intentos < 2) // intenta 3 veces como mucho
+            if (sendto(socket_udp, &ack, sizeof(ack), 0, (struct sockaddr *)&direccion_cliente, tam) >= 0)
             {
-                printf("Se envia nuevamente el ACK. Intento numero: %d \n", intentos);
-                intentos++; // si no se recibio el ACK, reintentar
-                goto enviarack;
+                ack_enviado = 1;
+                printf("ACK N: %d enviado correctamente\n", bloque);
+                break;
             }
             else
             {
-                enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "Se envio el mismo ACK 3 veces sin respuesta.");
-                perror("Error al enviar ACK");
-                fclose(archivo);
-                return false;
+                printf("Se envia nuevamente el ACK. Intento numero: %d\n", i + 1);
             }
-            enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "No se pudo enviar el ACK");
+        }
 
+        if (!ack_enviado)
+        {
+            enviarMensajeError(socket_udp, direccion_cliente, ERR_NOT_DEFINED, "Se envio el mismo ACK 3 veces sin respuesta.");
             perror("Error al enviar ACK");
             fclose(archivo);
             return false;
         }
+
         printf("ACK N: %d enviado\n", bloque);
 
         if (datos_len < MAX_DATA)
         {
-            printf("Transferencia completada\n");   
+            printf("Transferencia completada\n");
             // Último paquete recibido, termina recepción
             break;
         }
@@ -318,6 +315,11 @@ void imprimir_paquete(uint16_t bloque, const char *datos, size_t len)
 
 int main(int argc, char *argv[])
 {
+    if (argc != 2)
+    {
+        fprintf(stderr, "Uso: %s <puerto>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
     int socket_udp;
 
     // Primer parametro: se usa la internet, segundo parametro: si es o no orientado a la conexion, el ultimo numero siempre es 0 porque indica al protocolo que corresponde si es orientado a la conexion o datagramas. Porque cuando lo crearon pensaron que iba a haber mas protocolos para cada uno. Al final TCP termino siendo orientado a la conexion y UDP no orientado a la conexion y no hubieron mas protocolos para cada uno.
