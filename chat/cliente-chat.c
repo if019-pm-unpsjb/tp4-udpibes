@@ -93,8 +93,8 @@ void enviar_archivo(int socket, const char *nombre_archivo)
 
     char respuesta[TAM_PAQUETE];
     memset(respuesta, 0, sizeof(respuesta));
-
     int bytes_recibidos = recv(socket, respuesta, TAM_PAQUETE, 0);
+
     if (bytes_recibidos <= 0)
     {
         perror("Error al recibir mensaje de archivo");
@@ -103,12 +103,12 @@ void enviar_archivo(int socket, const char *nombre_archivo)
 
     if (strncmp(respuesta, "/error_archivo", 14) == 0)
     {
-        imprimirMensaje("Error: %s\n", 1, respuesta + 15); // Salta el comando para mostrar solo el mensaje
+        imprimirMensaje("Error: %s", 1, respuesta + 15); // Salta el comando para mostrar solo el mensaje
         return;
     }
     else if (!(strncmp(respuesta, "/ok_archivo", 11) == 0))
     {
-        imprimirMensaje("Respuesta desconocida: %s\n", 1, respuesta);
+        imprimirMensaje("Respuesta desconocida: %s", 1, respuesta);
         return;
     }
 
@@ -163,7 +163,7 @@ void recibir_archivo(int socket)
 
     if (access(nombre_archivo, F_OK) == 0)
     {
-        imprimirMensaje("El archivo '%s' ya existe. Operación cancelada.\n", 1, nombre_archivo);
+        imprimirMensaje("El archivo '%s' ya existe. Operación cancelada.", 1, nombre_archivo);
         strcpy(msg, "/error_archivo El archivo ya existe en el cliente al que se lo quiere mandar\n");
         send(socket, msg, TAM_PAQUETE, 0);
         return;
@@ -238,8 +238,12 @@ void *escuchar_chat(void *arg)
 
         if (strncmp(buffer, "/archivo ", 9) == 0)
         {
-            //imprimirMensaje("[%s]: %s ", 1, conexion->nombre, buffer);
+            // imprimirMensaje("[%s]: %s ", 1, conexion->nombre, buffer);
             recibir_archivo(conexion->socket);
+        }
+        else if (strncmp(buffer, "/error_archivo", 14) == 0)
+        {
+            imprimirMensaje("Error: %s", 1, buffer + 15); // Salta el comando para mostrar solo el mensaje
         }
         else
         {
@@ -384,11 +388,11 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
 
 void enviar_mensaje_o_archivo(char linea[TAM_PAQUETE], ConexionChat conexion)
 {
-    if (strncmp(linea, "/archivo ", 9) == 0) // ✅ BIEN
+    if (strncmp(linea, "/archivo ", 9) == 0)
     {
         send(conexion.socket, linea, TAM_PAQUETE, 0);
-        char nombre_archivo[256];                   // Asegurate de que sea suficientemente grande
-        sscanf(linea + 9, "%255s", nombre_archivo); // Extrae el nombre (sin espacios)
+        char nombre_archivo[256];
+        sscanf(linea + 9, "%255s", nombre_archivo);
         enviar_archivo(conexion.socket, nombre_archivo);
     }
     else
@@ -475,12 +479,10 @@ int main(int argc, char *argv[])
         send(servidor_socket, mensaje_nombre, TAM_PAQUETE, 0);
 
         char buffer[TAM_PAQUETE];
-        int bytes = recv(servidor_socket, buffer, TAM_PAQUETE, 0);
+        int bytes = recv(servidor_socket, buffer, MAX_RESPUESTA_SERVIDOR_NOMBRE, 0);
         if (bytes > 0)
         {
             buffer[bytes] = '\0'; // Aseguramos que sea una cadena válida
-            // printf("DEBUG: recibido [%s]\n", buffer);
-
             if (strncmp(buffer, "/error", 6) == 0)
             {
                 imprimirMensaje("\nNombre rechazado, por favor ingrese otro nombre\n ", 1); // Muestra el mensaje de error
@@ -549,7 +551,6 @@ int main(int argc, char *argv[])
         {
             char linea[TAM_PAQUETE];
             fgets(linea, sizeof(linea), stdin); // Lee comando o mensaje del usuario
-
             size_t len = strlen(linea);
             if (len > 0 && linea[len - 1] == '\n')
             {

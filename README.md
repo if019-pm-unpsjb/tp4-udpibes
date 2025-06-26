@@ -43,3 +43,29 @@ Otras funciones de biblioteca útiles:
 ### Orden de invocación (Datagramas)
 
 ![datagram-syscalls](assets/datagram-socket.png)
+
+
+## Consideraciones de implementacion del chat
+Interfaz y ayuda de comandos
+
+Una vez registrado correctamente el nombre de usuario, el cliente debe informar al usuario sobre los comandos disponibles, mostrando la lista de comandos soportados.
+
+El comando /info permite ver los usuarios conectados haciéndole una consulta al cliente. 
+
+Manejo de buffers y comunicación
+
+Es recomendable limpiar (poner en cero) los buffers antes de armar cada mensaje para evitar fugas de información previa.
+
+Comandos y formato
+
+No se permite el uso de espacios ni saltos de línea dentro de los nombres de usuario ni de los comandos enviados. Los nombres de usuario y comandos deben ser una sola palabra o secuencia continua de caracteres sin espacios.
+
+Envío de archivos  
+
+No se permite recibir un archivo si ya existe otro con el mismo nombre. 
+
+
+Los archivos se nombran como <nombre emisor>_<nombre archivo>
+
+El servidor se ejecuta como ./server-chat <PUERTO_ESCUCHA>
+El cliente se ejecuta como ./cliente-chat <IP_SERVIDOR> <PUERTO_ESCUCHA_SERVIDOR> <PUERTO_ESCUCHA_CLIENTE>
