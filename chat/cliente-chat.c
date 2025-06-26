@@ -91,6 +91,27 @@ void enviar_archivo(int socket, const char *nombre_archivo)
         return;
     }
 
+    char respuesta[TAM_PAQUETE];
+    memset(respuesta, 0, sizeof(respuesta));
+
+    int bytes_recibidos = recv(socket, respuesta, TAM_PAQUETE, 0);
+    if (bytes_recibidos <= 0)
+    {
+        perror("Error al recibir mensaje de archivo");
+        return;
+    }
+
+    if (strncmp(respuesta, "/error_archivo", 14) == 0)
+    {
+        imprimirMensaje("Error: %s\n", 1, respuesta + 15); // Salta el comando para mostrar solo el mensaje
+        return;
+    }
+    else if (!(strncmp(respuesta, "/ok_archivo", 11) == 0))
+    {
+        imprimirMensaje("Respuesta desconocida: %s\n", 1, respuesta);
+        return;
+    }
+
     // Enviar el contenido del archivo
     char buffer[TAM_PAQUETE];
     size_t leidos;
@@ -121,21 +142,16 @@ void recibir_archivo(int socket)
 
     // 1. Recibir paquete fijo
     char paquete[TAM_PAQUETE];
-    int total = 0;
-    while (total < TAM_PAQUETE)
+    int recibidos = recv(socket, paquete, TAM_PAQUETE, 0);
+    if (recibidos <= 0)
     {
-        int recibidos = recv(socket, paquete + total, TAM_PAQUETE - total, 0);
-        if (recibidos <= 0)
-        {
-            perror("Error al recibir metadatos del archivo");
-            return;
-        }
-        total += recibidos;
+        perror("Error al recibir metadatos del archivo");
+        return;
     }
 
     // 2. Copiar los primeros bytes al struct Datos_archivo
     Datos_archivo info;
-    memcpy(&info, paquete, sizeof(info));  // ✅
+    memcpy(&info, paquete, sizeof(info)); // ✅
 
     imprimirMensaje("Recibiendo archivo '%s' de %d bytes, enviado por %s",
                     1, info.nombre_archivo, info.tamano_archivo, conexion_chat_actual->nombre);
@@ -143,6 +159,18 @@ void recibir_archivo(int socket)
     // 3. Crear nombre de archivo destino
     char nombre_archivo[MAX_TAM_NOMBRE_ARCHIVO + MAX_TAM_NOMBRE_USUARIO];
     snprintf(nombre_archivo, sizeof(nombre_archivo), "%s_%s", conexion_chat_actual->nombre, info.nombre_archivo);
+    char msg[TAM_PAQUETE];
+
+    if (access(nombre_archivo, F_OK) == 0)
+    {
+        imprimirMensaje("El archivo '%s' ya existe. Operación cancelada.\n", 1, nombre_archivo);
+        strcpy(msg, "/error_archivo El archivo ya existe en el cliente al que se lo quiere mandar\n");
+        send(socket, msg, TAM_PAQUETE, 0);
+        return;
+    }
+
+    strcpy(msg, "/ok_archivo\n");
+    send(socket, msg, TAM_PAQUETE, 0);
 
     FILE *archivo = fopen(nombre_archivo, "wb");
     if (!archivo)
@@ -169,12 +197,12 @@ void recibir_archivo(int socket)
 
         fwrite(buffer, 1, a_escribir, archivo);
         total_recibido += a_escribir;
+        bzero(buffer, sizeof(buffer));
     }
 
     fclose(archivo);
     imprimirMensaje("Archivo '%s' recibido correctamente.", 1, info.nombre_archivo);
 }
-
 
 // Hilo que escucha mensajes entrantes en un chat activo
 void *escuchar_chat(void *arg)
@@ -210,6 +238,7 @@ void *escuchar_chat(void *arg)
 
         if (strncmp(buffer, "/archivo ", 9) == 0)
         {
+            //imprimirMensaje("[%s]: %s ", 1, conexion->nombre, buffer);
             recibir_archivo(conexion->socket);
         }
         else
@@ -286,8 +315,6 @@ void iniciar_conexion_entrante(int escucha_socket)
         if (strncmp(nombre_entrante, "/nombre ", 8) == 0)
         {
             sscanf(nombre_entrante + 8, "%s", nombre_auxiliar);
-
-            // snprintf(mensaje, sizeof(mensaje), "/nombre %s\n", nombre_auxiliar);
         }
         imprimirMensaje("Cliente se conecto para chatear: %s\n ", 1, nombre_auxiliar);
 
@@ -355,7 +382,7 @@ void iniciar_conexion_salida(char *ip, int puerto, const char *nombre_receptor)
     pthread_detach(thread);
 }
 
-void enviar_mensaje_o_archivo(char linea[BUFFER_SIZE], ConexionChat conexion)
+void enviar_mensaje_o_archivo(char linea[TAM_PAQUETE], ConexionChat conexion)
 {
     if (strncmp(linea, "/archivo ", 9) == 0) // ✅ BIEN
     {
@@ -443,12 +470,12 @@ int main(int argc, char *argv[])
 
         scanf("%31s", nombre_personal); // Leemos hasta 99 caracteres (dejamos 1 para el '\0')
 
-        char mensaje_nombre[MAX_TAM_PAQUETE_NOMBRE_USUARIO];
+        char mensaje_nombre[TAM_PAQUETE];
         snprintf(mensaje_nombre, sizeof(mensaje_nombre), "/nombre %s\n", nombre_personal);
-        send(servidor_socket, mensaje_nombre, MAX_TAM_PAQUETE_NOMBRE_USUARIO, 0);
+        send(servidor_socket, mensaje_nombre, TAM_PAQUETE, 0);
 
-        char buffer[BUFFER_SIZE];
-        int bytes = recv(servidor_socket, buffer, sizeof(buffer) - 1, 0);
+        char buffer[TAM_PAQUETE];
+        int bytes = recv(servidor_socket, buffer, TAM_PAQUETE, 0);
         if (bytes > 0)
         {
             buffer[bytes] = '\0'; // Aseguramos que sea una cadena válida
@@ -487,9 +514,9 @@ int main(int argc, char *argv[])
                     1);
 
     // Envia al servidor el puerto en el que este cliente estara escuchando
-    char mensaje[64];
+    char mensaje[TAM_PAQUETE];
     snprintf(mensaje, sizeof(mensaje), "/puerto %d\n", puerto_escucha);
-    send(servidor_socket, mensaje, strlen(mensaje), 0);
+    send(servidor_socket, mensaje, TAM_PAQUETE, 0);
 
     // Crea el socket de escucha para otros clientes
     int escucha_socket = crear_socket_escucha(puerto_escucha);
@@ -503,6 +530,7 @@ int main(int argc, char *argv[])
     int fdmax = (escucha_socket > servidor_socket) ? escucha_socket : servidor_socket;
 
     bool difusion = false;
+    bool difusion_all = false;
     while (1)
     {
         FD_ZERO(&read_fds);
@@ -519,7 +547,7 @@ int main(int argc, char *argv[])
         // Entrada del usuario
         if (FD_ISSET(STDIN_FILENO, &read_fds))
         {
-            char linea[BUFFER_SIZE];
+            char linea[TAM_PAQUETE];
             fgets(linea, sizeof(linea), stdin); // Lee comando o mensaje del usuario
 
             size_t len = strlen(linea);
@@ -533,10 +561,10 @@ int main(int argc, char *argv[])
             }
             else if (strcmp(linea, "/c @allall") == 0)
             {
-                // VER EL TEMA DE QUE LOS RECEPTORES NO MUESTRA SU NOMBRE. TRATE DE HACER QUE LE PREGUNTARA A LOS CLIENTES EL NOMBRE Y QUE RESPONDIERAN CON EL MISMO (SIN METER AL SERVER), PERO NO FUNCIONO Y ME PARECE UN BARDO
                 difusion = true;
+                difusion_all = true;
                 ultimo_nombre_receptor[0] = '\0'; // array vacio porque no hay un unico receptor
-                send(servidor_socket, linea, strlen(linea), 0);
+                send(servidor_socket, linea, TAM_PAQUETE, 0);
             }
             else if (strncmp(linea, "/c ", 3) == 0)
             {
@@ -551,12 +579,12 @@ int main(int argc, char *argv[])
                 else
                 {
                     snprintf(mensaje, sizeof(mensaje), "/c %s\n", ultimo_nombre_receptor);
-                    send(servidor_socket, mensaje, strlen(mensaje), 0);
+                    send(servidor_socket, mensaje, TAM_PAQUETE, 0);
                 }
             }
             else if (strcmp(linea, "/info") == 0)
             {
-                send(servidor_socket, linea, strlen(linea), 0);
+                send(servidor_socket, linea, TAM_PAQUETE, 0);
             }
             else if (strcmp(linea, "/actual") == 0)
             {
@@ -564,6 +592,10 @@ int main(int argc, char *argv[])
                 if (difusion)
                 {
                     imprimirMensaje("\nEstas en modo difusion (@all)\n ", 1);
+                }
+                else if (difusion_all)
+                {
+                    imprimirMensaje("\nEstas en modo difusion (@allall)\n ", 1);
                 }
                 else if (conexion_chat_actual != NULL)
                 {
@@ -610,7 +642,7 @@ int main(int argc, char *argv[])
                 else
                 {
                     // Si no, envia al servidor
-                    send(servidor_socket, linea, strlen(linea), 0);
+                    send(servidor_socket, linea, TAM_PAQUETE, 0);
                 }
                 pthread_mutex_unlock(&chat_mutex);
             }
@@ -621,8 +653,8 @@ int main(int argc, char *argv[])
         // Respuesta del servidor
         if (FD_ISSET(servidor_socket, &read_fds))
         {
-            char buffer[BUFFER_SIZE];
-            int bytes = recv(servidor_socket, buffer, sizeof(buffer) - 1, 0);
+            char buffer[TAM_PAQUETE];
+            int bytes = recv(servidor_socket, buffer, TAM_PAQUETE, 0);
             if (bytes <= 0)
             {
                 imprimirMensaje("Desconectado del servidor. ", 1);

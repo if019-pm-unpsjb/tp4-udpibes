@@ -26,7 +26,7 @@ int numero_clientes = 0;        // Contador actual de clientes conectados
 // Funcion que envia al cliente la lista de IPs y puertos conectados
 void enviar_lista_usuarios(int cliente_socket)
 {
-    char lista[BUFFER_SIZE] = "Usuarios conectados:\n";
+    char lista[TAM_PAQUETE] = "Usuarios conectados:\n";
     int cantidad = 0;
 
     for (int i = 0; i < numero_clientes; i++)
@@ -208,16 +208,16 @@ int main(int argc, char *argv[])
                         {
                             char nombre[MAX_TAM_NOMBRE_USUARIO];
                             sscanf(buffer + 8, "%s", nombre);
-
+                            char msg[MAX_RESPUESTA_SERVIDOR_NOMBRE];
                             if (nombre_usuario_existe(nombre))
                             {
-                                char msg[] = "/error\n";
-                                send(i, msg, strlen(msg), 0);
+                                strcpy(msg, "/error\n");
+                                send(i, msg, MAX_RESPUESTA_SERVIDOR_NOMBRE, 0);
                             }
                             else
                             {
-                                char msg[] = "/ok\n";
-                                send(i, msg, strlen(msg), 0);
+                                strcpy(msg, "/ok\n");   
+                                send(i, msg, MAX_RESPUESTA_SERVIDOR_NOMBRE, 0);
                                 for (int j = 0; j < numero_clientes; j++)
                                 {
                                     if (clientes[j].socket == i)
@@ -271,11 +271,11 @@ int main(int argc, char *argv[])
                                 {
                                     if (j != idx_emisor)
                                     {
-                                        char msg[BUFFER_SIZE];
+                                        char msg[TAM_PAQUETE];
                                         snprintf(msg, sizeof(msg), "/conectar %s %d %s\n",
                                                  inet_ntoa(clientes[j].addr.sin_addr),
                                                  clientes[j].puerto_escucha, clientes[j].nombre_usuario);
-                                        send(clientes[idx_emisor].socket, msg, strlen(msg), 0);
+                                        send(clientes[idx_emisor].socket, msg, TAM_PAQUETE, 0);
                                     }
                                 }
                                 printf("Cliente %s pidió conexión con todos\n", clientes[idx_emisor].nombre_usuario);
@@ -295,11 +295,11 @@ int main(int argc, char *argv[])
 
                                 if (idx_receptor != -1 && idx_emisor != -1)
                                 {
-                                    char msg[BUFFER_SIZE];
+                                    char msg[TAM_PAQUETE];
                                     snprintf(msg, sizeof(msg), "/conectar %s %d %s\n",
                                              inet_ntoa(clientes[idx_receptor].addr.sin_addr),
                                              clientes[idx_receptor].puerto_escucha, clientes[idx_receptor].nombre_usuario);
-                                    send(clientes[idx_emisor].socket, msg, strlen(msg), 0);
+                                    send(clientes[idx_emisor].socket, msg, TAM_PAQUETE, 0);
 
                                     printf("Le dije a %s que se conecte con %s\n",
                                            clientes[idx_emisor].nombre_usuario,
@@ -314,7 +314,7 @@ int main(int argc, char *argv[])
                         else
                         {
                             char msg[] = "Comando no reconocido.\n";
-                            send(i, msg, strlen(msg), 0);
+                            send(i, msg, TAM_PAQUETE, 0);
                         }
                     }
                 }
