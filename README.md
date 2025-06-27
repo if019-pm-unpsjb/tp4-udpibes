@@ -1,6 +1,58 @@
+[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/4JwrUkEc)
 # IF019 - TP4
 
 Trabajo Práctico 4 de Redes y Transmisión de Datos
+
+## Consideraciones de implementacion del chat
+Interfaz y ayuda de comandos
+
+Una vez registrado correctamente el nombre de usuario, el cliente debe informar al usuario sobre los comandos disponibles, mostrando la lista de comandos soportados.
+
+El comando /info permite ver los usuarios conectados haciéndole una consulta al cliente. 
+
+Manejo de buffers y comunicación
+
+Es recomendable limpiar (poner en cero) los buffers antes de armar cada mensaje para evitar fugas de información previa.
+
+Comandos y formato
+
+No se permite el uso de espacios ni saltos de línea dentro de los nombres de usuario ni de los comandos enviados. Los nombres de usuario y comandos deben ser una sola palabra o secuencia continua de caracteres sin espacios.
+
+Envío de archivos  
+
+No se permite recibir un archivo si ya existe otro con el mismo nombre. 
+
+
+Los archivos se nombran como <nombre emisor>_<nombre archivo>
+
+	 Los metadatos del archivo se guardan en una estructura. 
+
+Comando /actual
+
+Este comando permite ver a un cliente con quien está hablando. Es local por lo que no necesita intervención del servidor. 
+
+Comando /info
+Descripción:
+Solicita al servidor la lista de todos los usuarios actualmente conectados (exceptuando al propio cliente). El servidor responde con un listado de nombres de usuario, IP y puerto, uno por línea, en texto plano.
+Formato enviado:
+1024 bytes
+---------
+| /info  |
+---------
+
+Respuestas esperadas:
+
+El servidor responderá con un bloque de texto en el siguiente formato:
+
+<NOMBRE_USUARIO> (<IP>:<PUERTO>)
+
+Si no hay otros usuarios conectados, el servidor responderá con el mensaje:
+
+No hay otros usuarios conectados.
+
+
+El servidor se ejecuta como ./server-chat <PUERTO_ESCUCHA>
+El cliente se ejecuta como ./cliente-chat <IP_SERVIDOR> <PUERTO_ESCUCHA_SERVIDOR> <PUERTO_ESCUCHA_CLIENTE>
 
 ## Compilar
 
@@ -42,3 +94,4 @@ Otras funciones de biblioteca útiles:
 ### Orden de invocación (Datagramas)
 
 ![datagram-syscalls](assets/datagram-socket.png)
+
